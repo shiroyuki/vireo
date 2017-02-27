@@ -1,4 +1,4 @@
-from .core import Core
+from .core   import Core
 from .helper import log
 
 ASYNC_START = 1

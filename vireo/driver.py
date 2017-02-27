@@ -23,8 +23,11 @@ def get_blocking_queue_connection(url):
 def active_connection(url):
     log('debug', 'Connecting')
 
-    connection = get_blocking_queue_connection(url)
-    channel    = connection.channel()
+    try:
+        connection = get_blocking_queue_connection(url)
+        channel    = connection.channel()
+    except ConnectionClosed:
+        raise NoConnectionError('Failed to connect while opening an active connection')
 
     log('debug', 'Connected and channel opened')
 
@@ -42,7 +45,11 @@ def active_connection(url):
 
         log('debug', 'Disconnected')
     except ConnectionClosed:
-        log('debug', 'Already disconnected') # bypassed if the connection is no longer available.
+        log('error', 'Already disconnected') # bypassed if the connection is no longer available.
+
+
+class NoConnectionError(RuntimeError):
+    """ No connection error """
 
 
 class SubscriptionNotAllowedError(RuntimeError):
@@ -103,15 +110,24 @@ class AsyncRabbitMQDriver(object):
 
     def declare_queue(self, queue_name, options):
         with active_connection(self._url) as channel:
-            channel.queue_declare(queue = queue_name, **options)
+            try:
+                channel.queue_declare(queue = queue_name, **options)
+            except ConnectionClosed:
+                raise NoConnectionError('Unexpectedly losed the connection while declaring a queue')
 
     def delete_queue(self, queue_name, options):
         with active_connection(self._url) as channel:
-            channel.queue_delete(queue = queue_name, **options)
+            try:
+                channel.queue_delete(queue = queue_name, **options)
+            except ConnectionClosed:
+                raise NoConnectionError('Unexpectedly losed the connection while deleting a queue')
 
     def declare_exchange(self, exchange_name, exchange_type, **kwargs):
         with active_connection(self._url) as channel:
-            channel.exchange_declare(exchange = exchange_name, exchange_type = exchange_type, **kwargs)
+            try:
+                channel.exchange_declare(exchange = exchange_name, exchange_type = exchange_type, **kwargs)
+            except ConnectionClosed:
+                raise NoConnectionError('Unexpectedly losed the connection while declaring an exchange')
 
     def start_consuming(self, route_to_callbacks = None):
         """ Asynchronously consume messages
@@ -161,7 +177,7 @@ class AsyncRabbitMQDriver(object):
                 time.sleep(1)
         except KeyboardInterrupt:
             log('warning', 'SIGTERM received')
-            log('warning', 'Terminating all route listeners')
+            log('debug', 'Terminating all route listeners')
 
         connection_losed = SHARED_SIGNAL_CONNECTION_LOSS in self._shared_stream
 
@@ -190,6 +206,9 @@ class AsyncRabbitMQDriver(object):
             route_listener.join()
             log('info', 'Route {}: Termination confirmed (joined).'.format(route_listener.route))
 
+        if connection_losed:
+            raise NoConnectionError('Unexpectedly losed the connection during message consumption')
+
     def publish(self, route, message, options = None):
         """ Synchronously publish a message
 
@@ -206,13 +225,16 @@ class AsyncRabbitMQDriver(object):
         options = fill_in_the_blank(options or {}, default_parameters)
 
         with active_connection(self._url) as channel:
-            log('debug', 'Declaring: route={}'.format(route))
-            channel.queue_declare(queue = route, passive = True)
-            log('debug', 'Declared: route={}'.format(route))
+            try:
+                log('debug', 'Declaring: route={}'.format(route))
+                channel.queue_declare(queue = route, passive = True)
+                log('debug', 'Declared: route={}'.format(route))
 
-            log('debug', 'Publishing: route={} message={} options={}'.format(route, message, options))
-            channel.basic_publish(**options)
-            log('debug', 'Published: route={} message={} options={}'.format(route, message, options))
+                log('debug', 'Publishing: route={} message={} options={}'.format(route, message, options))
+                channel.basic_publish(**options)
+                log('debug', 'Published: route={} message={} options={}'.format(route, message, options))
+            except ConnectionClosed:
+                raise NoConnectionError('Unexpectedly losed the connection while publishing a message')
 
     def declare_queue_with_delegation(self, origin_queue_name, ttl, fallback_queue_name = None,
                                       common_queue_options = None, exchange_options = None):
@@ -239,13 +261,16 @@ class AsyncRabbitMQDriver(object):
         fill_in_the_blank(exchange_options, {'exchange': exchange_name, 'exchange_type': 'direct'})
 
         with active_connection(self._url) as channel:
-            channel.exchange_declare(**exchange_options)
+            try:
+                channel.exchange_declare(**exchange_options)
 
-            self.declare_queue(actual_fallback_queue_name, fallback_queue_options)
+                self.declare_queue(actual_fallback_queue_name, fallback_queue_options)
 
-            channel.queue_bind(
-                queue    = actual_fallback_queue_name,
-                exchange = exchange_name,
-            )
+                channel.queue_bind(
+                    queue    = actual_fallback_queue_name,
+                    exchange = exchange_name,
+                )
 
-            self.declare_queue(origin_queue_name, origin_queue_options)
+                self.declare_queue(origin_queue_name, origin_queue_options)
+            except ConnectionClosed:
+                raise NoConnectionError('Unexpectedly losed the connection while orchestrating queues and exchange for delegation')

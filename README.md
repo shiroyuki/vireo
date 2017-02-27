@@ -58,7 +58,7 @@ You can simply write.
 ```python
 from vireo import ObserverFactory # or CoreFactory
 
-app = CoreFactory('amqp://guest:guest@localhost:5672/%%2F')
+app = ObserverFactory('amqp://guest:guest@localhost:5672/%%2F')
 ```
 
 ## APIs

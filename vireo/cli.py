@@ -4,7 +4,7 @@ import logging
 from gallium.interface import ICommand
 
 from .core     import Core
-from .driver   import AsyncRabbitMQDriver
+from .driver   import AsyncRabbitMQDriver, NoConnectionError
 from .observer import Observer, SYNC_START
 from .helper   import prepare_logger
 
@@ -34,15 +34,15 @@ class Server(ICommand):
         driver = AsyncRabbitMQDriver(args.bind_url)
         vireo  = Observer(driver)
 
-        vireo.open('vireo.sample.primary', delegation_ttl = 5000)
-        vireo.open('vireo.sample.secondary')
-        vireo.open('vireo.sample.direct')
-
-        vireo.on('vireo.sample.direct',            lambda x: print('vireo.sample.direct: {}'.format(x)))
-        vireo.on('vireo.sample.secondary',         lambda x: print('vireo.sample.secondary: {}'.format(x)))
-        vireo.on('vireo.sample.primary.delegated', lambda x: print('vireo.sample.primary.delegated: {}'.format(x)))
-
         try:
+            vireo.open('vireo.sample.primary', delegation_ttl = 5000)
+            vireo.open('vireo.sample.secondary')
+            vireo.open('vireo.sample.direct')
+
+            vireo.on('vireo.sample.direct',            lambda x: print('vireo.sample.direct: {}'.format(x)))
+            vireo.on('vireo.sample.secondary',         lambda x: print('vireo.sample.secondary: {}'.format(x)))
+            vireo.on('vireo.sample.primary.delegated', lambda x: print('vireo.sample.primary.delegated: {}'.format(x)))
+
             vireo.start(SYNC_START)
         except KeyboardInterrupt:
             vireo.stop()
