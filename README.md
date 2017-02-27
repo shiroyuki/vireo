@@ -1,6 +1,6 @@
 # Vireo
 
-A library and framework for event-driven application development.
+A library and framework for event-driven application development
 
 > **Caution:** This library is currently under active development. Until version 1.0, the API signatures are subject to change. While the code should be stable (not easily throwing exceptions) even before reaching version 1.0, version pinning is highly recommended.
 
@@ -45,7 +45,7 @@ from vireo          import Observer # or Core
 from vireo.driver   import AsyncRabbitMQDriver
 from vireo.observer import Observer, SYNC_START
 
-driver = AsyncRabbitMQDriver('amqp://guest:guest@localhost:5672/%%2F')
+driver = AsyncRabbitMQDriver('amqp://guest:guest@localhost:5672/%2F')
 app    = Observer(driver) # or Core(driver)
 ```
 
@@ -108,4 +108,46 @@ def on_foo(self, message):
 
 app.on('foo', on_foo)
 app.on('foo.lambda', lambda x: print('foo_lambda:', x))
+```
+
+## Try it out?
+
+In the spirit of getting people started earlier, there is a sample code implemented as part of the
+source code (but it is never enabled by default.) However, the sample code is only working with
+Python 3.5 or newer due to one of the development-only requirements.
+
+If you want to see and play with it, you can start by first cloning or downloading this source code.
+Here is how you can clone this.
+
+```bash
+git clone git@github.com:shiroyuki/vireo.git
+```
+
+Then, install [Gallium Framework](https://github.com/shiroyuki/gallium.git) by running this command.
+
+```bash
+pip3 install gallium
+```
+
+### Run the sample observer
+
+To run, execute `g3 sample.observe -d -b amqp://guest:guest@localhost:5672/%2F` where
+RabbitMQ is running from the local host.
+
+This command will automatically create one exchange:
+* `fallback/vireo.sample.primary/vireo.sample.primary.delegated`
+
+This command will also automatically create three queues (event queues):
+* `vireo.sample.primary` with no listeners, 5-second message TTL and DLX to the created exchange,
+* `vireo.sample.primary.delegated` bound to the created exchange with one echo-only listener,
+* `vireo.sample.secondary` with one echo-only listener.
+
+### Emit an event
+
+To emit an event, run `g3 event.emit -d -b amqp://guest:guest@localhost:5672/%2F EVENT_NAME JSON_DATA`.
+
+For example,
+
+```bash
+g3 event.emit -d -b amqp://guest:guest@localhost:5672/%2F vireo.sample.secondary "{ \"id\": 12345 }"
 ```
