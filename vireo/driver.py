@@ -55,6 +55,8 @@ class Consumer(threading.Thread):
 
     def run(self):
         with active_connection(self.url) as channel:
+            self._channel = channel
+
             # Declare the callback wrapper for this route.
             def callback_wrapper(channel, method_frame, header_frame, body):
                 log('debug', 'Method Frame: {}'.format(method_frame))
@@ -67,55 +69,37 @@ class Consumer(threading.Thread):
             log('debug', 'Listening to {}'.format(self.route))
 
             channel.basic_consume(callback_wrapper, self.route)
-            channel.start_consuming()
+
+            # NOTE there is a bug in start_consuming that prevents stop_consuming from cleanly
+            #      stopping message consumption. The following is a hack suggested in StackOverflow.
+            # channel.start_consuming()
+            while channel._consumer_infos:
+                channel.connection.process_data_events(time_limit=1)
+
+            log('debug', 'Stopped listening to {}'.format(self.route))
 
     def stop(self):
+        log('debug', 'Stopping listening to {}'.format(self.route))
         self._channel.stop_consuming()
 
 
 class AsyncRabbitMQDriver(object):
     def __init__(self, url):
-        self._url            = url
-        self._async_listener = None
-        self._connection     = None
-        self._channel        = None
-        self._known_queues   = {}
-
-    @property
-    def connection(self):
-        if not self._connection:
-            self._connection = get_blocking_queue_connection(self._url)
-
-        return self._connection
-
-    @property
-    def channel(self):
-        if not self._channel or self._channel.is_closed:
-            self._channel = self.connection.channel()
-
-        return self._channel
-
-    def disconnect(self):
-        if not self._connection:
-            return
-
-        self._connection.close()
-
-        self._connection = None
+        self._url             = url
+        self._async_listener  = None
+        self._has_term_signal = False
 
     def declare_queue(self, queue_name, options):
-        self._known_queues[queue_name] = options
-
-        self.channel.queue_declare(queue = queue_name, **options)
-
-    def _redeclare_queue(self, queue_name):
-        self.channel.queue_declare(queue = queue_name, **self._known_queues[queue_name])
+        with active_connection(self._url) as channel:
+            channel.queue_declare(queue = queue_name, **options)
 
     def delete_queue(self, queue_name, options):
-        self.channel.queue_delete(queue = queue_name, **options)
+        with active_connection(self._url) as channel:
+            channel.queue_delete(queue = queue_name, **options)
 
     def declare_exchange(self, exchange_name, exchange_type, **kwargs):
-        self.channel.exchange_declare(exchange = exchange_name, exchange_type = exchange_type, **kwargs)
+        with active_connection(self._url) as channel:
+            channel.exchange_declare(exchange = exchange_name, exchange_type = exchange_type, **kwargs)
 
     def start_consuming(self, route_to_callbacks = None):
         """ Asynchronously consume messages
@@ -132,12 +116,10 @@ class AsyncRabbitMQDriver(object):
             }
         )
 
-    def stop_consuming(self):
-        if not self._async_listener or not self._async_listener.is_alive():
-            return
+        self._async_listener.start()
 
-        self.channel.stop_consuming()
-        self.connection.close()
+    def stop_consuming(self):
+        self._has_term_signal = True
 
     def synchronously_consume(self, route_to_callbacks):
         """ Synchronously consume messages
@@ -152,20 +134,33 @@ class AsyncRabbitMQDriver(object):
             route_listeners.append(route_listener)
 
         try:
-            while True:
+            while not self._has_term_signal:
                 time.sleep(1)
         except KeyboardInterrupt:
             log('info', 'SIGTERM received. Terminating all route listeners.')
 
         for route_listener in route_listeners:
             if not route_listener.is_alive():
+                log('info', 'Route {}: Already stopped listening (not alive).'.format(route_listener.route))
+
                 continue
 
-            log('info', 'Stopping a route listener from message consumption.')
+            log('debug', 'Route {}: Sending the signal to stop listening.'.format(route_listener.route))
             route_listener.stop()
-            log('info', 'Stopped a route listener from message consumption.')
+            log('debug', 'Route {}: Terminating the listener.'.format(route_listener.route))
+            try:
+                route_listener._stop()
+            except AssertionError: # this is raised if the thread lock is still locked.
+                log('warning', 'Route {}: Failed to stop properly'.format(route_listener.route))
+
+            if not route_listener.is_alive():
+                log('info', 'Route {}: Termination confirmed (killed)'.format(route_listener.route))
+
+                continue
+
+            log('debug', 'Route {}: Waiting the listener to join back to the parent thread.'.format(route_listener.route))
             route_listener.join()
-            log('info', 'A route listener has cleanly stopped')
+            log('info', 'Route {}: Termination confirmed (joined).'.format(route_listener.route))
 
     def publish(self, route, message, options = None):
         """ Synchronously publish a message
@@ -215,12 +210,14 @@ class AsyncRabbitMQDriver(object):
 
         fill_in_the_blank(exchange_options, {'exchange': exchange_name, 'exchange_type': 'direct'})
 
-        self.channel.exchange_declare(**exchange_options)
-        self.declare_queue(actual_fallback_queue_name, fallback_queue_options)
+        with active_connection(self._url) as channel:
+            channel.exchange_declare(**exchange_options)
 
-        self.channel.queue_bind(
-            queue    = actual_fallback_queue_name,
-            exchange = exchange_name,
-        )
+            self.declare_queue(actual_fallback_queue_name, fallback_queue_options)
 
-        self.declare_queue(origin_queue_name, origin_queue_options)
+            channel.queue_bind(
+                queue    = actual_fallback_queue_name,
+                exchange = exchange_name,
+            )
+
+            self.declare_queue(origin_queue_name, origin_queue_options)

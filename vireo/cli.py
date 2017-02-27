@@ -48,7 +48,7 @@ class Server(ICommand):
             vireo.stop()
 
 
-class EventEmitter(ICommand):
+class EventCore(ICommand):
     """ Emit an event """
     def identifier(self):
         return 'event.emit'
