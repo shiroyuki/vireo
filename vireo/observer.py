@@ -8,7 +8,8 @@ class UnknownRunningModeError(RuntimeError):
     """ Error for unknown running mode """
 
 
-class Server(Core):
+class Observer(Core):
+    """ Event Observer """
     def __init__(self, driver):
         super().__init__(driver)
 
