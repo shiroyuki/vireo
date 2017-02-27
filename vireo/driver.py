@@ -10,6 +10,8 @@ from pika.exceptions import ConnectionClosed, ChannelClosed
 
 from .helper import fill_in_the_blank, log
 
+SHARED_SIGNAL_CONNECTION_LOSS = 1
+
 
 def get_blocking_queue_connection(url):
     init_params = URLParameters(url)
@@ -34,10 +36,13 @@ def active_connection(url):
 
     log('debug', 'Disconnecting')
 
-    channel.close()
-    connection.close()
+    try:
+        channel.close()
+        connection.close()
 
-    log('debug', 'Disconnected')
+        log('debug', 'Disconnected')
+    except ConnectionClosed:
+        log('debug', 'Already disconnected') # bypassed if the connection is no longer available.
 
 
 class SubscriptionNotAllowedError(RuntimeError):
@@ -45,13 +50,14 @@ class SubscriptionNotAllowedError(RuntimeError):
 
 
 class Consumer(threading.Thread):
-    def __init__(self, url, route, callback):
+    def __init__(self, url, route, callback, shared_stream):
         super().__init__(daemon = True)
 
-        self.url      = url
-        self.route    = route
-        self.callback = callback
-        self._channel = None
+        self.url            = url
+        self.route          = route
+        self.callback       = callback
+        self._shared_stream = shared_stream
+        self._channel       = None
 
     def run(self):
         with active_connection(self.url) as channel:
@@ -73,8 +79,13 @@ class Consumer(threading.Thread):
             # NOTE there is a bug in start_consuming that prevents stop_consuming from cleanly
             #      stopping message consumption. The following is a hack suggested in StackOverflow.
             # channel.start_consuming()
-            while channel._consumer_infos:
-                channel.connection.process_data_events(time_limit=1)
+            try:
+                while channel._consumer_infos:
+                    channel.connection.process_data_events(time_limit = 1)
+            except ConnectionClosed:
+                log('warning', 'Unexpected connection loss while listening to {}'.format(self.route))
+
+                self._shared_stream.append(SHARED_SIGNAL_CONNECTION_LOSS)
 
             log('debug', 'Stopped listening to {}'.format(self.route))
 
@@ -87,6 +98,7 @@ class AsyncRabbitMQDriver(object):
     def __init__(self, url):
         self._url             = url
         self._async_listener  = None
+        self._shared_stream   = []
         self._has_term_signal = False
 
     def declare_queue(self, queue_name, options):
@@ -129,29 +141,45 @@ class AsyncRabbitMQDriver(object):
         route_listeners = []
 
         for route, callback in route_to_callbacks.items():
-            route_listener = Consumer(self._url, route, callback)
+            route_listener = Consumer(self._url, route, callback, self._shared_stream)
             route_listener.start()
             route_listeners.append(route_listener)
 
         try:
-            while not self._has_term_signal:
+            while True:
+                if self._has_term_signal:
+                    log('info', 'Stopping all route listeners')
+
+                    break
+
+                if SHARED_SIGNAL_CONNECTION_LOSS in self._shared_stream:
+                    log('error', 'Unexpected connection loss detected')
+                    log('warning', 'Terminating all route listeners')
+
+                    break
+
                 time.sleep(1)
         except KeyboardInterrupt:
-            log('info', 'SIGTERM received. Terminating all route listeners.')
+            log('warning', 'SIGTERM received')
+            log('warning', 'Terminating all route listeners')
+
+        connection_losed = SHARED_SIGNAL_CONNECTION_LOSS in self._shared_stream
 
         for route_listener in route_listeners:
-            if not route_listener.is_alive():
-                log('info', 'Route {}: Already stopped listening (not alive).'.format(route_listener.route))
+            if not connection_losed:
+                if not route_listener.is_alive():
+                    log('info', 'Route {}: Already stopped listening (not alive).'.format(route_listener.route))
 
-                continue
+                    continue
 
-            log('debug', 'Route {}: Sending the signal to stop listening.'.format(route_listener.route))
-            route_listener.stop()
-            log('debug', 'Route {}: Terminating the listener.'.format(route_listener.route))
+                log('debug', 'Route {}: Sending the signal to stop listening.'.format(route_listener.route))
+                route_listener.stop()
+
             try:
+                log('debug', 'Route {}: Terminating the listener.'.format(route_listener.route))
                 route_listener._stop()
             except AssertionError: # this is raised if the thread lock is still locked.
-                log('warning', 'Route {}: Failed to stop properly'.format(route_listener.route))
+                log('warning', 'Route {}: Failed to stop cleanly'.format(route_listener.route))
 
             if not route_listener.is_alive():
                 log('info', 'Route {}: Termination confirmed (killed)'.format(route_listener.route))
