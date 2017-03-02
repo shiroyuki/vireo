@@ -6,7 +6,7 @@ class Core(object):
         self._driver = driver
 
     def emit(self, event_name, data = None, options = None):
-        """ Emit a message.
+        """ Emit a message to a particular (shared) event.
 
             .. code-block:: python
 
@@ -18,3 +18,17 @@ class Core(object):
         self._driver.publish(event_name, data, options or {})
 
         log('debug', 'Published "{}" with {}'.format(event_name, data))
+
+    def broadcast(self, event_name, data = None, options = None):
+        """ Broadcast a message to a particular (distributed) event.
+
+            .. code-block:: python
+
+                app.broadcast('system.down', {'service_category': 'go_board'})
+
+        """
+        log('debug', 'Broadcasting "{}" with {}'.format(event_name, data))
+
+        self._driver.broadcast(event_name, data, options or {})
+
+        log('debug', 'Broadcasted "{}" with {}'.format(event_name, data))

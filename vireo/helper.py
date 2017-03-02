@@ -12,17 +12,22 @@ def log(level, *args, **kwargs):
 
     getattr(_logger, level)(*args, **kwargs)
 
+
 def prepare_logger(level):
     global _logger
+
+    formatter = logging.Formatter('{name} @ {asctime} [{levelname}] {message}', style='{')
 
     _logger = logging.getLogger('vireo')
     _logger.setLevel(level)
 
-    _log_handler = logging.StreamHandler()
-    _log_handler.setLevel(level)
+    log_handler = logging.StreamHandler()
+    log_handler.setLevel(level)
+    log_handler.setFormatter(formatter)
 
-    _logger.addHandler(_log_handler)
+    _logger.addHandler(log_handler)
 
+    return _logger
 
 def fill_in_the_blank(main_dict, default_dict):
     for default_key, default_value in default_dict.items():

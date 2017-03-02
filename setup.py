@@ -10,6 +10,8 @@ setup(
     # url          = 'http://shiroyuki.com/projects/vireo.html',
     packages     = [
         'vireo',
+        'vireo.drivers',
+        'vireo.drivers.rabbitmq',
     ],
     classifiers = [
         'Development Status :: 5 - Production/Stable',
