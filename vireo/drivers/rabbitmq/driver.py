@@ -26,7 +26,7 @@ class Driver(object):
         if self._async_listener and self._async_listener.is_alive():
             raise SubscriptionNotAllowedError('Unable to consume messages as this driver is currently active.')
 
-        self._async_listener = threading.Thread(target = self.synchronously_consume)
+        self._async_listener = threading.Thread(target = self.join)
         self._async_listener.start()
 
     def stop_consuming(self):
