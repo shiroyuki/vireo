@@ -4,7 +4,8 @@ from pika            import BlockingConnection
 from pika.connection import URLParameters
 from pika.exceptions import ConnectionClosed, ChannelClosed
 
-from ...helper import fill_in_the_blank, log
+from ...helper  import fill_in_the_blank, log
+from .exception import NoConnectionError
 
 SHARED_SIGNAL_CONNECTION_LOSS = 1
 SHARED_TOPIC_EXCHANGE_NAME    = 'vireo_default_topic_r0'

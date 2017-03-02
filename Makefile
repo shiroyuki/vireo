@@ -4,6 +4,8 @@ G3_CLI=cd sample && vireo
 LXC_IMAGE_TAG=shiroyuki/vireo
 LXC_RUN_OPTS=
 LXC_RUN_ARGS=
+SAMPLE_IMAGE=vireo/sampleobserver
+SAMPLE_SERVER:=amqp://guest:guest@127.0.0.1:5672/%2F
 
 package:
 	@rm -v dist/*
@@ -26,3 +28,9 @@ docker-run: docker-image
 
 clean:
 	@rm -rf build dist *.egg-info;
+
+sample-build:
+	docker build $(BUILD_EXT) -t $(SAMPLE_IMAGE) .
+
+sample-run: sample-build
+	docker run -it --rm -t $(SAMPLE_IMAGE) g3 sample.observe -d -b $(SAMPLE_SERVER)
