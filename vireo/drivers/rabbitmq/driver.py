@@ -149,16 +149,26 @@ class Driver(object):
                 raise NoConnectionError('Unexpectedly losed the connection while orchestrating queues and exchange for delegation')
 
     def broadcast(self, route, message, options = None):
-        exchange_name = options['exchange'] \
-            if ('exchange' in options and options['exchange']) \
-            else SHARED_TOPIC_EXCHANGE_NAME
+        default_parameters = {
+            'exchange'    : '',
+            'routing_key' : route or '',
+            'body'        : json.dumps(message),
+            'properties'  : BasicProperties(content_type = 'application/json'),
+        }
+
+        options = fill_in_the_blank(options or {}, default_parameters)
+
+        if 'exchange' not in options or not options['exchange']:
+            options['exchange'] = SHARED_TOPIC_EXCHANGE_NAME
+
+        exchange_name = options['exchange']
 
         with active_connection(self._url) as channel:
             try:
                 log('debug', 'Declaring a shared topic exchange')
 
                 channel.exchange_declare(
-                    exchange      = SHARED_TOPIC_EXCHANGE_NAME,
+                    exchange      = exchange_name,
                     exchange_type = 'topic',
                     passive       = False,
                     durable       = True,

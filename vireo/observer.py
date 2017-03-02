@@ -105,7 +105,7 @@ class Observer(Core):
                 app.on('foo', on_foo)
                 app.on('foo.lambda', lambda x: print('foo_lambda:', x))
         """
-        self._driver.observe(event_name, callback, resumable, True)
+        self._driver.observe(event_name, callback, False, True)
 
     def join(self, running_mode = SYNC_START):
         """ Start the observation

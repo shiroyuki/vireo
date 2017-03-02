@@ -1,5 +1,6 @@
 import json
 import logging
+import pprint
 
 from gallium.interface import ICommand
 
@@ -38,9 +39,16 @@ class Server(ICommand):
         # vireo.open('vireo.sample.primary', delegation_ttl = 5000)
         # vireo.on('vireo.sample.primary.delegated', lambda x: print('vireo.sample.primary.delegated: {}'.format(x)))
 
-        service.on('vireo.sample.direct',           lambda x: print('vireo.sample.direct: {}'.format(x)))
-        service.on('vireo.sample.secondary',        lambda x: print('vireo.sample.secondary: {}'.format(x)))
-        service.on('vireo.sample.direct.resumable', lambda x: print('vireo.sample.direct: {}'.format(x)), resumable = True)
+        def wrapper(label, data):
+            print('{}:'.format(label))
+            pprint.pprint(data, indent = 2)
+
+        service.on('vireo.sample.direct',           lambda x: wrapper('vireo.sample.direct',    x))
+        service.on('vireo.sample.secondary',        lambda x: wrapper('vireo.sample.secondary', x))
+        service.on('vireo.sample.direct.resumable', lambda x: wrapper('vireo.sample.direct',    x), resumable = True)
+
+        service.on_broadcast('vireo.sample.broadcast.one', lambda x: wrapper('vireo.sample.broadcast.one', x))
+        service.on_broadcast('vireo.sample.broadcast.two', lambda x: wrapper('vireo.sample.broadcast.two', x))
 
         service.join(SYNC_START)
 
