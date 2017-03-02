@@ -8,7 +8,7 @@ def log(level, *args, **kwargs):
     global _logger
 
     if not _logger:
-        prepare__logger(logging.INFO)
+        prepare_logger(logging.INFO)
 
     getattr(_logger, level)(*args, **kwargs)
 
