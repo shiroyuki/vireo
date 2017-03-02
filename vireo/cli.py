@@ -34,18 +34,15 @@ class Server(ICommand):
         driver  = Driver(args.bind_url)
         service = Observer(driver)
 
-        try:
-            # In this example, delegation is disabled.
-            # vireo.open('vireo.sample.primary', delegation_ttl = 5000)
-            # vireo.on('vireo.sample.primary.delegated', lambda x: print('vireo.sample.primary.delegated: {}'.format(x)))
+        # In this example, delegation is disabled.
+        # vireo.open('vireo.sample.primary', delegation_ttl = 5000)
+        # vireo.on('vireo.sample.primary.delegated', lambda x: print('vireo.sample.primary.delegated: {}'.format(x)))
 
-            service.on('vireo.sample.direct',           lambda x: print('vireo.sample.direct: {}'.format(x)))
-            service.on('vireo.sample.secondary',        lambda x: print('vireo.sample.secondary: {}'.format(x)))
-            service.on('vireo.sample.direct.resumable', lambda x: print('vireo.sample.direct: {}'.format(x)), resumable = True)
+        service.on('vireo.sample.direct',           lambda x: print('vireo.sample.direct: {}'.format(x)))
+        service.on('vireo.sample.secondary',        lambda x: print('vireo.sample.secondary: {}'.format(x)))
+        service.on('vireo.sample.direct.resumable', lambda x: print('vireo.sample.direct: {}'.format(x)), resumable = True)
 
-            service.join(SYNC_START)
-        except KeyboardInterrupt:
-            service.stop()
+        service.join(SYNC_START)
 
 
 class EventEmitter(ICommand):
