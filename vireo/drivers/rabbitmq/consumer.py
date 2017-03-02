@@ -87,6 +87,14 @@ class Consumer(threading.Thread):
             self.queue_options or {}
         )
 
+        channel.exchange_declare(
+            exchange      = SHARED_TOPIC_EXCHANGE_NAME,
+            exchange_type = 'topic',
+            passive       = False,
+            durable       = True,
+            auto_delete   = False,
+        )
+
         response        = channel.queue_declare(**queue_options)
         temp_queue_name = response.method.queue
 

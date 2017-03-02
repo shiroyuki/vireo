@@ -37,7 +37,7 @@ class Driver(object):
         try:
             while True:
                 if self._has_term_signal:
-                    log('info', 'Stopping all route listeners')
+                    log('warning', 'Stopping all route listeners')
 
                     break
 
@@ -61,7 +61,7 @@ class Driver(object):
 
                     continue
 
-                log('debug', 'Route {}: Sending the signal to stop listening.'.format(consumer.route))
+                log('warning', 'Route {}: Sending the signal to stop listening.'.format(consumer.route))
                 consumer.stop()
 
             try:
