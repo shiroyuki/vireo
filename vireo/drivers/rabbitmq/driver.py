@@ -13,13 +13,22 @@ from .helper    import active_connection, SHARED_TOPIC_EXCHANGE_NAME, SHARED_SIG
 
 
 class Driver(object):
-    def __init__(self, url):
-        self._url             = url
-        self._async_listener  = None
-        self._shared_stream   = []
-        self._consumers       = []
-        self._has_term_signal = False
-        self._active_routes   = []
+    """ Driver for RabbitMQ
+
+        :param str url: the URL to the server
+        :param list consumer_classes: the list of Consumer-based classes
+    """
+    def __init__(self, url, consumer_classes = None):
+        for consumer_class in consumer_classes:
+            assert isinstance(consumer_class, Consumer), 'This ({}) needs to be a subclass of vireo.drivers.rabbitmq.Consumer.'.format(consumer_class)
+
+        self._url              = url
+        self._consumer_classes = consumer_classes
+        self._async_listener   = None
+        self._shared_stream    = []
+        self._consumers        = []
+        self._has_term_signal  = False
+        self._active_routes    = []
 
     def setup_async_cleanup(self):
         """ Synchronously join all consumers."""
@@ -185,7 +194,15 @@ class Driver(object):
                 raise NoConnectionError('Unexpectedly losed the connection while broadcasting an event')
 
     def observe(self, route, callback, resumable, distributed, options = None):
-        consumer = Consumer(self._url, route, callback, self._shared_stream, resumable, distributed, options)
+        consumer_class = Consumer
+
+        for overriding_consumer_class in self._consumer_classes:
+            if overriding_consumer_class.can_handle_route(route):
+                consumer_class = overriding_consumer_class
+
+                break
+
+        consumer = consumer_class(self._url, route, callback, self._shared_stream, resumable, distributed, options)
         consumer.start()
 
         self._consumers.append(consumer)

@@ -22,6 +22,10 @@ class Consumer(threading.Thread):
         self._channel       = None
         self._queue_name    = None
 
+    @staticmethod
+    def can_handle_route(routing_key):
+        return True # By default, this will handle all routes.
+
     def run(self):
         with active_connection(self.url) as channel:
             self._channel = channel
