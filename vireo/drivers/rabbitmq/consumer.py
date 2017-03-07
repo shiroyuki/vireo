@@ -9,6 +9,18 @@ from .helper import active_connection, fill_in_the_blank, SHARED_TOPIC_EXCHANGE_
 
 
 class Consumer(threading.Thread):
+    """ Message consumer
+
+        This is used to handle messages on one particular route/queue.
+
+        :param str url: the URL to the RabbitMQ server
+        :param str route: the route to observe
+        :param callable callback: the callback function / callable object
+        :param list shared_stream: the internal message queue for thread synchronization
+        :param bool resumable: the flag to indicate whether the consumption is resumable
+        :param bool resumable: the flag to indicate whether the messages are distributed evenly across all consumers on the same route
+        :param dict queue_options: additional queue options
+    """
     def __init__(self, url, route, callback, shared_stream, resumable, distributed, queue_options):
         super().__init__(daemon = True)
 
@@ -24,7 +36,13 @@ class Consumer(threading.Thread):
 
     @staticmethod
     def can_handle_route(routing_key):
-        return True # By default, this will handle all routes.
+        """ Check if the consumer can handle the given routing key.
+
+            .. note:: the default implementation will handle all routes.
+
+            :param str routing_key: the routing key
+        """
+        return True
 
     def run(self):
         with active_connection(self.url) as channel:
@@ -60,6 +78,7 @@ class Consumer(threading.Thread):
             log('debug', 'Stopped listening to {}'.format(self._debug_route_name()))
 
     def stop(self):
+        """ Stop consumption """
         log('debug', 'Stopping listening to {}'.format(self._debug_route_name()))
         self._channel.stop_consuming()
 

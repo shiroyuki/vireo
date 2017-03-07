@@ -16,7 +16,7 @@ class Driver(object):
     """ Driver for RabbitMQ
 
         :param str url: the URL to the server
-        :param list consumer_classes: the list of Consumer-based classes
+        :param list consumer_classes: the list of :class:`.consumer.Consumer`-based classes
     """
     def __init__(self, url, consumer_classes = None):
         for consumer_class in consumer_classes:
@@ -31,7 +31,7 @@ class Driver(object):
         self._active_routes    = []
 
     def setup_async_cleanup(self):
-        """ Synchronously join all consumers."""
+        """ Prepare to cleanly join all consumers asynchronously. """
         if self._async_listener and self._async_listener.is_alive():
             raise SubscriptionNotAllowedError('Unable to consume messages as this driver is currently active.')
 
@@ -39,6 +39,7 @@ class Driver(object):
         self._async_listener.start()
 
     def stop_consuming(self):
+        """ Send the signal to stop consumption. """
         self._has_term_signal = True
 
     def join(self):
@@ -96,6 +97,7 @@ class Driver(object):
 
             :param str route:   the route
             :param str message: the message
+            :param dict options: additional options for basic_publish
         """
         default_parameters = {
             'exchange'    : '',
@@ -120,7 +122,6 @@ class Driver(object):
 
     def declare_queue_with_delegation(self, origin_queue_name, ttl, fallback_queue_name = None,
                                       common_queue_options = None, exchange_options = None):
-
         actual_fallback_queue_name = fallback_queue_name or '{}.delegated'.format(origin_queue_name)
         exchange_name              = 'fallback/{}/{}'.format(origin_queue_name, actual_fallback_queue_name)
 
@@ -158,6 +159,12 @@ class Driver(object):
                 raise NoConnectionError('Unexpectedly losed the connection while orchestrating queues and exchange for delegation')
 
     def broadcast(self, route, message, options = None):
+        """ Broadcast a message to a particular route.
+
+            :param str route:    the route
+            :param str message:  the message
+            :param dict options: additional options for basic_publish
+        """
         default_parameters = {
             'exchange'    : '',
             'routing_key' : route or '',

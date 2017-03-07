@@ -108,14 +108,14 @@ class Observer(Core):
         self._driver.observe(event_name, callback, False, True)
 
     def join(self, running_mode = SYNC_START):
-        """ Start the observation
+        """ Wait for all handlers to stop.
 
             There are two mode: synchronous (``vireo.observer.SYNC_START``) and asynchronous
-            (``vireo.observer.ASYNC_START``) starts.
+            (``vireo.observer.ASYNC_START``) joins.
 
             .. code-block:: python
 
-                app.start(ASYNC_START)
+                app.join(ASYNC_START)
         """
         if running_mode == ASYNC_START:
             self._driver.setup_async_cleanup()
@@ -130,7 +130,9 @@ class Observer(Core):
         raise UnknownRunningModeError(running_mode)
 
     def stop(self):
-        """ Stop the observation
+        """ Send the signal to all handlers to stop observation.
+
+            .. warning:: This method does not block the caller thread while waiting all handlers to stop.
 
             .. code-block:: python
 

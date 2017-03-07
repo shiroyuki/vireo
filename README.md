@@ -36,29 +36,21 @@ The design is inspired by Node.js event API.
 
 ## Getting started
 
-### Without a factory class
-
 You can simply write.
 
 ```python
-from vireo          import Observer # or Core
-from vireo.driver   import AsyncRabbitMQDriver
-from vireo.observer import Observer, SYNC_START
+from vireo                 import Observer # or Core
+from vireo.driver.rabbitmq import Driver
+from vireo.observer        import Observer, SYNC_START
 
-driver = AsyncRabbitMQDriver('amqp://guest:guest@localhost:5672/%2F')
+# Instantiate the observer
+driver = Driver('amqp://guest:guest@localhost:5672/%2F')
 app    = Observer(driver) # or Core(driver)
-```
 
-### With a factory class (proposal)
+# ... Bind event handlers ...
 
-*(Coming soon)*
-
-You can simply write.
-
-```python
-from vireo import ObserverFactory # or CoreFactory
-
-app = ObserverFactory('amqp://guest:guest@localhost:5672/%%2F')
+# Waiting all handlers to stop (only for a observer).
+app.join(SYNC_START) # ASYNC_START (for non-blocking join)
 ```
 
 ## APIs
@@ -70,7 +62,7 @@ Emit a message to the given event.
 ```python
 app.emit('security.alert.intrusion', {'ip': '127.0.0.1'})
 ```
-
+<!--
 ### `vireo.Observer.open(event_name, options = None, delegation_ttl = None)`
 
 Prepare to observe an event.
@@ -94,10 +86,10 @@ app.open('foo')
 ### `vireo.Observer.close(event_name, options = None)`
 
 Clean up after observing an event.
-
+-->
 ### `vireo.Observer.on(event_name, callback)`
 
-Listen to an event with a callback function.
+Listen to **a direct event** with a callback function.
 
 The callback is a callable object, e.g., function, class method, lambda object, which
 takes only one parameter which is a JSON-decoded object.
@@ -108,6 +100,42 @@ def on_foo(self, message):
 
 app.on('foo', on_foo)
 app.on('foo.lambda', lambda x: print('foo_lambda:', x))
+```
+
+### `vireo.Observer.on_broadcast(event_name, callback)`
+
+Listen to **a broadcasted event** with a callback function.
+
+The callback is a callable object, e.g., function, class method, lambda object, which
+takes only one parameter which is a JSON-decoded object.
+
+```python
+def on_bar(self, message):
+    print('on_bar:', message)
+
+app.on_broadcast('bar', on_foo)
+app.on_broadcast('bar.lambda', lambda x: print('bar_lambda:', x))
+```
+
+### `vireo.Observer.stop()`
+
+Send the signal to all handlers to stop observation.
+
+> NOTE: This method does not block the caller thread while waiting all handlers to stop.
+
+```python
+app.stop()
+```
+
+### `vireo.Observer.join(running_mode = vireo.observer.SYNC_START)`
+
+Wait for all handlers to stop.
+
+There are two mode: synchronous (``vireo.observer.SYNC_START``) and asynchronous
+(``vireo.observer.ASYNC_START``) joins.
+
+```python
+app.start(ASYNC_START)
 ```
 
 ## Try it out?
