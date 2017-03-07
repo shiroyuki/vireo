@@ -2,7 +2,7 @@ from distutils.core import setup
 
 setup(
     name         = 'vireo',
-    version      = '0.3.3',
+    version      = '0.4.0',
     description  = 'A library and framework for event-driven application development',
     license      = 'MIT',
     author       = 'Juti Noppornpitak',
