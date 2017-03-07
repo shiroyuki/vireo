@@ -8,12 +8,12 @@ def log(level, *args, **kwargs):
     global _logger
 
     if not _logger:
-        prepare_logger(logging.INFO)
+        prepare_logger(logging.WARNING)
 
     getattr(_logger, level)(*args, **kwargs)
 
 
-def prepare_logger(level):
+def prepare_logger(level = logging.WARNING):
     global _logger
 
     formatter = logging.Formatter('{name} @ {asctime} [{levelname}] {message}', style='{')

@@ -19,11 +19,11 @@ class Driver(object):
         :param list consumer_classes: the list of :class:`.consumer.Consumer`-based classes
     """
     def __init__(self, url, consumer_classes = None):
-        for consumer_class in consumer_classes:
+        for consumer_class in consumer_classes or []:
             assert isinstance(consumer_class, Consumer), 'This ({}) needs to be a subclass of vireo.drivers.rabbitmq.Consumer.'.format(consumer_class)
 
         self._url              = url
-        self._consumer_classes = consumer_classes
+        self._consumer_classes = consumer_classes or []
         self._async_listener   = None
         self._shared_stream    = []
         self._consumers        = []
