@@ -200,7 +200,7 @@ class Driver(object):
             except ConnectionClosed:
                 raise NoConnectionError('Unexpectedly losed the connection while broadcasting an event')
 
-    def observe(self, route, callback, resumable, distributed, options = None):
+    def observe(self, route, callback, resumable, distributed, options = None, simple_handling = True):
         consumer_class = Consumer
 
         for overriding_consumer_class in self._consumer_classes:
@@ -209,7 +209,8 @@ class Driver(object):
 
                 break
 
-        consumer = consumer_class(self._url, route, callback, self._shared_stream, resumable, distributed, options)
+        consumer = consumer_class(self._url, route, callback, self._shared_stream, resumable,
+                                  distributed, options, simple_handling)
         consumer.start()
 
         self._consumers.append(consumer)

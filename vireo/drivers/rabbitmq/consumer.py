@@ -4,6 +4,7 @@ import threading
 from pika.exceptions import ConnectionClosed, ChannelClosed
 
 from ...helper import log
+from ...model  import Message
 
 from .helper import active_connection, fill_in_the_blank, SHARED_TOPIC_EXCHANGE_NAME
 
@@ -21,18 +22,20 @@ class Consumer(threading.Thread):
         :param bool resumable: the flag to indicate whether the messages are distributed evenly across all consumers on the same route
         :param dict queue_options: additional queue options
     """
-    def __init__(self, url, route, callback, shared_stream, resumable, distributed, queue_options):
+    def __init__(self, url, route, callback, shared_stream, resumable, distributed, queue_options,
+                 simple_handling):
         super().__init__(daemon = True)
 
-        self.url            = url
-        self.route          = route
-        self.callback       = callback
-        self.resumable      = resumable
-        self.distributed    = distributed
-        self.queue_options  = queue_options
-        self._shared_stream = shared_stream
-        self._channel       = None
-        self._queue_name    = None
+        self.url             = url
+        self.route           = route
+        self.callback        = callback
+        self.resumable       = resumable
+        self.distributed     = distributed
+        self.queue_options   = queue_options
+        self.simple_handling = simple_handling
+        self._shared_stream  = shared_stream
+        self._channel        = None
+        self._queue_name     = None
 
     @staticmethod
     def can_handle_route(routing_key):
@@ -54,9 +57,14 @@ class Consumer(threading.Thread):
             def callback_wrapper(channel, method_frame, header_frame, body):
                 log('debug', 'Method Frame: {}'.format(method_frame))
                 log('debug', 'Header Frame: {}'.format(header_frame))
-                log('debug', 'Body: {}'.format(header_frame))
 
-                self.callback(json.loads(body.decode('utf8')))
+                decoded_message = json.loads(body.decode('utf8'))
+                message         = decoded_message
+
+                if not self.simple_handling:
+                    message = Message(decoded_message, {'header': header_frame, 'method': method_frame})
+
+                self.callback(message)
 
                 channel.basic_ack(delivery_tag = method_frame.delivery_tag)
 

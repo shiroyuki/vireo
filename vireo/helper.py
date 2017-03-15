@@ -16,7 +16,12 @@ def log(level, *args, **kwargs):
 def prepare_logger(level = logging.WARNING):
     global _logger
 
-    formatter = logging.Formatter('{name} @ {asctime} [{levelname}] {message}', style='{')
+    try:
+        # Python 3
+        formatter = logging.Formatter('{name} @ {asctime} [{levelname}] {message}', style='{')
+    except TypeError:
+        # Python 2
+        formatter = logging.Formatter('$(name)a @ $(asctime)s [%(levelname)s] %(message)s')
 
     _logger = logging.getLogger('vireo')
     _logger.setLevel(level)

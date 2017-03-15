@@ -54,25 +54,14 @@ class Observer(Core):
     #     self._driver.declare_queue(event_name, options or {})
     #
     #     log('debug', 'Ready to observe event "{}"'.format(event_name))
-    #
-    # def close(self, event_name, options = None):
-    #     """ Clean up after observing an event.
-    #
-    #         :param str event_name: the name of the queue
-    #         :param str options:    the option for the driver
-    #     """
-    #     log('debug', 'Preparing to stop observing event "{}"'.format(event_name))
-    #
-    #     self._driver.delete_queue(event_name, options or {})
-    #
-    #     log('debug', 'Event "{}" may not be observed properly at this point.'.format(event_name))
 
-    def on(self, event_name, callback, resumable = False):
+    def on(self, event_name, callback, resumable = False, simple_handling = True):
         """ Listen to an event with a callback function.
 
             :param str event_name: the name of the event
             :param callable callback: the callback callable
             :param bool resumable: the flag to indicate whether the event consumption can be resumed (as the data stream will never be deleted).
+            :param bool simple_handling: the flag to instruct the code to return the content of the message, instead of returning the whole :class:`vireo.model.Message` object.
 
             The callback is a callable object, e.g., function, class method, lambda object, which
             takes only one parameter which is a JSON-decoded object.
@@ -87,11 +76,15 @@ class Observer(Core):
                 app.on('foo', on_foo)
                 app.on('foo.lambda', lambda x: print('foo_lambda:', x))
         """
-        self._driver.observe(event_name, callback, resumable, False)
+        self._driver.observe(event_name, callback, resumable, False, simple_handling = simple_handling)
 
-    def on_broadcast(self, event_name, callback):
+    def on_broadcast(self, event_name, callback, simple_handling = True):
         """ Listen to an distributed event with a callback function.
 
+            :param str event_name: the name of the event
+            :param callable callback: the callback callable
+            :param bool simple_handling: the flag to instruct the code to return the content of the message, instead of returning the whole :class:`vireo.model.Message` object.
+
             The callback is a callable object, e.g., function, class method, lambda object, which
             takes only one parameter which is a JSON-decoded object.
 
@@ -105,7 +98,7 @@ class Observer(Core):
                 app.on('foo', on_foo)
                 app.on('foo.lambda', lambda x: print('foo_lambda:', x))
         """
-        self._driver.observe(event_name, callback, False, True)
+        self._driver.observe(event_name, callback, False, True, simple_handling = simple_handling)
 
     def join(self, running_mode = SYNC_START):
         """ Wait for all handlers to stop.
