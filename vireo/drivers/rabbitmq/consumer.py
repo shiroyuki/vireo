@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 
 from pika.exceptions import ConnectionClosed, ChannelClosed
 
@@ -64,9 +65,15 @@ class Consumer(threading.Thread):
                 if not self.simple_handling:
                     message = Message(decoded_message, {'header': header_frame, 'method': method_frame})
 
-                self.callback(message)
+                try:
+                    self.callback(message)
 
-                channel.basic_ack(delivery_tag = method_frame.delivery_tag)
+                    channel.basic_ack(delivery_tag = method_frame.delivery_tag)
+                except Exception as e:
+                    log('error', 'Exception raised while processing the message: {}: {}'.format(type(e).__name__, e))
+                    log('warning', 'The consumer is now paused for 5 seconds to allow quick disaster recovery.')
+
+                    time.sleep(5)
 
             log('debug', 'Listening to {}'.format(self._debug_route_name()))
 
