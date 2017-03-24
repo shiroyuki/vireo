@@ -2,12 +2,15 @@ import json
 import threading
 import time
 
-from pika.exceptions import ConnectionClosed, ChannelClosed
+from pika.exceptions import ConnectionClosed, ChannelClosed, IncompatibleProtocolError
 
 from ...helper import log
 from ...model  import Message
 
-from .helper import active_connection, fill_in_the_blank, SHARED_TOPIC_EXCHANGE_NAME
+from .exception import NoConnectionError
+from .helper import active_connection, fill_in_the_blank, SHARED_TOPIC_EXCHANGE_NAME, SHARED_SIGNAL_CONNECTION_LOSS
+
+MAX_RETRY_COUNT = 30
 
 
 class Consumer(threading.Thread):
@@ -34,9 +37,11 @@ class Consumer(threading.Thread):
         self.distributed     = distributed
         self.queue_options   = queue_options
         self.simple_handling = simple_handling
+        self._retry_count    = 0
         self._shared_stream  = shared_stream
         self._channel        = None
         self._queue_name     = None
+        self._stopped        = False
 
     @staticmethod
     def can_handle_route(routing_key):
@@ -49,6 +54,31 @@ class Consumer(threading.Thread):
         return True
 
     def run(self):
+        log('debug', 'Route {}: active'.format(self._debug_route_name()))
+
+        while not self._stopped:
+            try:
+                self._listen()
+            except NoConnectionError:
+                if self._retry_count < MAX_RETRY_COUNT:
+                    log('info', 'Will re-listen to {} in 1 second'.format(self._debug_route_name()))
+                    time.sleep(1)
+                    log('warning', 'Reconnecting to listen to {}'.format(self._debug_route_name()))
+
+                    continue
+
+                log('warning', 'Unexpected connection loss while listening to {} ({})'.format(self._debug_route_name(), e))
+
+                self._shared_stream.append(SHARED_SIGNAL_CONNECTION_LOSS)
+
+        log('debug', 'Route {}: inactive'.format(self._debug_route_name()))
+
+    def stop(self):
+        """ Stop consumption """
+        log('debug', 'Stopping listening to {}'.format(self._debug_route_name()))
+        self._channel.stop_consuming()
+
+    def _listen(self):
         with active_connection(self.url) as channel:
             self._channel = channel
 
@@ -56,9 +86,6 @@ class Consumer(threading.Thread):
 
             # Declare the callback wrapper for this route.
             def callback_wrapper(channel, method_frame, header_frame, body):
-                log('debug', 'Method Frame: {}'.format(method_frame))
-                log('debug', 'Header Frame: {}'.format(header_frame))
-
                 decoded_message = json.loads(body.decode('utf8'))
                 message         = decoded_message
 
@@ -79,23 +106,20 @@ class Consumer(threading.Thread):
 
             channel.basic_consume(callback_wrapper, self._queue_name)
 
+            self._retry_count = 0
+
             # NOTE there is a bug in start_consuming that prevents stop_consuming from cleanly
             #      stopping message consumption. The following is a hack suggested in StackOverflow.
             # channel.start_consuming()
             try:
                 while channel._consumer_infos:
                     channel.connection.process_data_events(time_limit = 1)
-            except ConnectionClosed:
-                log('warning', 'Unexpected connection loss while listening to {}'.format(self._debug_route_name()))
 
-                self._shared_stream.append(SHARED_SIGNAL_CONNECTION_LOSS)
+                self._stopped = True
+            except ConnectionClosed as e:
+                self._retry_count += 1
 
             log('debug', 'Stopped listening to {}'.format(self._debug_route_name()))
-
-    def stop(self):
-        """ Stop consumption """
-        log('debug', 'Stopping listening to {}'.format(self._debug_route_name()))
-        self._channel.stop_consuming()
 
     def _debug_route_name(self):
         return '{} ({})'.format(self.route, self._queue_name)
@@ -104,6 +128,7 @@ class Consumer(threading.Thread):
         queue_options = fill_in_the_blank(
             {
                 'auto_delete': not self.resumable,
+                'durable'    : self.resumable,
                 'queue'      : self.route,
             },
             self.queue_options or {}

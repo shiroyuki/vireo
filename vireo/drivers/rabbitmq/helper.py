@@ -2,7 +2,7 @@ import contextlib
 
 from pika            import BlockingConnection
 from pika.connection import URLParameters
-from pika.exceptions import ConnectionClosed, ChannelClosed
+from pika.exceptions import ConnectionClosed, ChannelClosed, IncompatibleProtocolError
 
 from ...helper  import fill_in_the_blank, log
 from .exception import NoConnectionError
@@ -24,6 +24,8 @@ def active_connection(url):
     try:
         connection = get_blocking_queue_connection(url)
         channel    = connection.channel()
+    except IncompatibleProtocolError:
+        raise NoConnectionError('Incompatible Protocol')
     except ChannelClosed:
         raise NoConnectionError('Failed to communicate while opening an active channel')
     except ConnectionClosed:

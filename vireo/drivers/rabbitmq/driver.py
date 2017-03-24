@@ -78,10 +78,10 @@ class Driver(object):
                 log('debug', 'Route {}: Terminating the listener.'.format(consumer.route))
                 consumer._stop()
             except AssertionError: # this is raised if the thread lock is still locked.
-                log('warning', 'Route {}: Failed to stop cleanly'.format(consumer.route))
+                log('warning', 'Route {}: Probably already stopped'.format(consumer.route))
 
             if not consumer.is_alive():
-                log('info', 'Route {}: Termination confirmed (killed)'.format(route_listener.route))
+                log('info', 'Route {}: Termination confirmed (killed)'.format(consumer.route))
 
                 continue
 
@@ -110,10 +110,6 @@ class Driver(object):
 
         with active_connection(self._url) as channel:
             try:
-                log('debug', 'Declaring: route={}'.format(route))
-                channel.queue_declare(queue = route, passive = True)
-                log('debug', 'Declared: route={}'.format(route))
-
                 log('debug', 'Publishing: route={} message={} options={}'.format(route, message, options))
                 channel.basic_publish(**options)
                 log('debug', 'Published: route={} message={} options={}'.format(route, message, options))
