@@ -39,9 +39,9 @@ The design is inspired by Node.js event API.
 You can simply write.
 
 ```python
-from vireo                 import Observer # or Core
-from vireo.driver.rabbitmq import Driver
-from vireo.observer        import Observer, SYNC_START
+from vireo                  import Observer # or Core
+from vireo.drivers.rabbitmq import Driver
+from vireo.observer         import SYNC_START
 
 # Instantiate the observer
 driver = Driver('amqp://guest:guest@localhost:5672/%2F')
