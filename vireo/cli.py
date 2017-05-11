@@ -11,7 +11,7 @@ from .helper           import prepare_logger
 
 
 class Server(ICommand):
-    """ Run the sample """
+    """ Run the sample observer. """
     def identifier(self):
         return 'sample.observe'
 
@@ -46,6 +46,14 @@ class Server(ICommand):
         service.on('vireo.sample.direct',           lambda x: wrapper('vireo.sample.direct',    x))
         service.on('vireo.sample.secondary',        lambda x: wrapper('vireo.sample.secondary', x))
         service.on('vireo.sample.direct.resumable', lambda x: wrapper('vireo.sample.direct',    x), resumable = True)
+
+        service.on(
+            'vireo.sample.error',
+            lambda x: wrapper('vireo.sample.error', x),
+            unlimited_retries = True,
+            error_handler = lambda c, e: logging.error('****** On {} ({}), {}'.format(c.route, c.queue_name, e))
+        )
+
 
         service.on_broadcast('vireo.sample.broadcast.one', lambda x: wrapper('vireo.sample.broadcast.one', x))
         service.on_broadcast('vireo.sample.broadcast.two', lambda x: wrapper('vireo.sample.broadcast.two', x))
