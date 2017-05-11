@@ -55,13 +55,16 @@ class Observer(Core):
     #
     #     log('debug', 'Ready to observe event "{}"'.format(event_name))
 
-    def on(self, event_name, callback, resumable = False, simple_handling = True):
+    def on(self, event_name, callback, resumable = False, simple_handling = True, unlimited_retries = False,
+           error_handler = None):
         """ Listen to an event with a callback function.
 
             :param str event_name: the name of the event
             :param callable callback: the callback callable
             :param bool resumable: the flag to indicate whether the event consumption can be resumed (as the data stream will never be deleted).
             :param bool simple_handling: the flag to instruct the code to return the content of the message, instead of returning the whole :class:`vireo.model.Message` object.
+            :param bool unlimited_retries: the flag to disable limited retry count.
+            :param callable error_handler: a callback function when the message consumption is interrupted.
 
             The callback is a callable object, e.g., function, class method, lambda object, which
             takes only one parameter which is a JSON-decoded object.
@@ -75,15 +78,26 @@ class Observer(Core):
 
                 app.on('foo', on_foo)
                 app.on('foo.lambda', lambda x: print('foo_lambda:', x))
-        """
-        self._driver.observe(event_name, callback, resumable, False, simple_handling = simple_handling)
 
-    def on_broadcast(self, event_name, callback, simple_handling = True):
+            Here is an example for ``error_handler``.
+
+            .. code-block:: Python
+
+                def error_handler(consumer, exception):
+                    ...
+        """
+        self._driver.observe(event_name, callback, resumable, False, simple_handling = simple_handling,
+                             unlimited_retries = unlimited_retries, error_handler = error_handler)
+
+    def on_broadcast(self, event_name, callback, simple_handling = True, unlimited_retries = False,
+                     error_handler = None):
         """ Listen to an distributed event with a callback function.
 
             :param str event_name: the name of the event
             :param callable callback: the callback callable
             :param bool simple_handling: the flag to instruct the code to return the content of the message, instead of returning the whole :class:`vireo.model.Message` object.
+            :param bool unlimited_retries: the flag to disable limited retry count.
+            :param callable error_handler: a callback function when the message consumption is interrupted.
 
             The callback is a callable object, e.g., function, class method, lambda object, which
             takes only one parameter which is a JSON-decoded object.
@@ -97,8 +111,16 @@ class Observer(Core):
 
                 app.on('foo', on_foo)
                 app.on('foo.lambda', lambda x: print('foo_lambda:', x))
+
+            Here is an example for ``error_handler``.
+
+            .. code-block:: Python
+
+                def error_handler(consumer, exception):
+                    ...
         """
-        self._driver.observe(event_name, callback, False, True, simple_handling = simple_handling)
+        self._driver.observe(event_name, callback, False, True, simple_handling = simple_handling,
+                             unlimited_retries = unlimited_retries, error_handler = error_handler)
 
     def join(self, running_mode = SYNC_START):
         """ Wait for all handlers to stop.

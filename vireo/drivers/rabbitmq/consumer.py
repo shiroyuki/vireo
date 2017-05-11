@@ -10,7 +10,7 @@ from ...model  import Message
 from .exception import NoConnectionError
 from .helper import active_connection, fill_in_the_blank, SHARED_TOPIC_EXCHANGE_NAME, SHARED_SIGNAL_CONNECTION_LOSS
 
-MAX_RETRY_COUNT = 30
+MAX_RETRY_COUNT = 120
 
 
 class Consumer(threading.Thread):
@@ -25,9 +25,18 @@ class Consumer(threading.Thread):
         :param bool resumable: the flag to indicate whether the consumption is resumable
         :param bool resumable: the flag to indicate whether the messages are distributed evenly across all consumers on the same route
         :param dict queue_options: additional queue options
+        :param bool unlimited_retries: the flag to disable limited retry count.
+        :param callable error_handler: a callback function when the message consumption is interrupted.
+
+        Here is an example for ``error_handler``.
+
+        .. code-block:: Python
+
+            def error_handler(consumer, exception):
+                ...
     """
     def __init__(self, url, route, callback, shared_stream, resumable, distributed, queue_options,
-                 simple_handling):
+                 simple_handling, unlimited_retries = False, error_handler = None):
         super().__init__(daemon = True)
 
         self.url             = url
@@ -43,6 +52,11 @@ class Consumer(threading.Thread):
         self._queue_name     = None
         self._stopped        = False
 
+        self._unlimited_retries = unlimited_retries
+        self._error_handler     = error_handler
+
+        assert not self._error_handler or callable(self._error_handler), 'The error handler must be callable.'
+
     @staticmethod
     def can_handle_route(routing_key):
         """ Check if the consumer can handle the given routing key.
@@ -53,16 +67,39 @@ class Consumer(threading.Thread):
         """
         return True
 
+    @property
+    def queue_name(self):
+        return self._queue_name
+
+    @property
+    def stopped(self):
+        return self._stopped
+
     def run(self):
         log('debug', 'Route {}: active'.format(self._debug_route_name()))
 
         while not self._stopped:
             try:
                 self._listen()
-            except NoConnectionError:
+            except NoConnectionError as e:
+                self._retry_count += 1
+
+                if self._error_handler:
+                    async_callback = threading.Thread(target = self._error_handler, args = (self, e), daemon = True)
+                    async_callback.start()
+
+                    log('error', 'Passed the error information occurred on {} to the error handler'.format(self._debug_route_name()))
+
                 if self._retry_count < MAX_RETRY_COUNT:
-                    log('info', 'Will re-listen to {} in 1 second'.format(self._debug_route_name()))
+                    log('info', 'Will re-listen to {} in 1 second ({} attempt(s) left)'.format(self._debug_route_name(), MAX_RETRY_COUNT - self._retry_count))
                     time.sleep(1)
+                    log('warning', 'Reconnecting to listen to {}'.format(self._debug_route_name()))
+
+                    continue
+
+                if self._unlimited_retries:
+                    log('info', 'Will re-listen to {} in 5 second (unlimited retries)'.format(self._debug_route_name()))
+                    time.sleep(5)
                     log('warning', 'Reconnecting to listen to {}'.format(self._debug_route_name()))
 
                     continue
@@ -106,8 +143,6 @@ class Consumer(threading.Thread):
 
             channel.basic_consume(callback_wrapper, self._queue_name)
 
-            self._retry_count = 0
-
             # NOTE there is a bug in start_consuming that prevents stop_consuming from cleanly
             #      stopping message consumption. The following is a hack suggested in StackOverflow.
             # channel.start_consuming()
@@ -115,9 +150,12 @@ class Consumer(threading.Thread):
                 while channel._consumer_infos:
                     channel.connection.process_data_events(time_limit = 1)
 
+                    if self._retry_count:
+                        self._retry_count = 0
+
                 self._stopped = True
             except ConnectionClosed as e:
-                self._retry_count += 1
+                raise NoConnectionError('The connection has been absurbly disconnected.')
 
             log('debug', 'Stopped listening to {}'.format(self._debug_route_name()))
 
