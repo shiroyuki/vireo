@@ -29,10 +29,16 @@ class Server(ICommand):
         )
 
     def execute(self, args):
-        # logging.basicConfig(level = logging.DEBUG if args.debug else logging.INFO)
-        prepare_logger(logging.DEBUG if args.debug else logging.INFO)
+        logger = prepare_logger(logging.DEBUG if args.debug else logging.INFO)
 
-        driver  = Driver(args.bind_url)
+        driver = Driver(
+            args.bind_url,
+            unlimited_retries = True,
+            on_connect        = lambda c: logger.info('--><-- CONNECTED to {} ({})'.format(c.route, c.queue_name)),
+            on_disconnect     = lambda c: logger.error('-x--x- DISCONNECTED from {} ({})'.format(c.route, c.queue_name)),
+            on_error          = lambda c, e: logger.error('-->-x- ERROR on {} ({}) → {}'.format(c.route, c.queue_name, e)),
+        )
+
         service = Observer(driver)
 
         # In this example, delegation is disabled.
@@ -50,8 +56,6 @@ class Server(ICommand):
         service.on(
             'vireo.sample.error',
             lambda x: wrapper('vireo.sample.error', x),
-            unlimited_retries = True,
-            error_handler = lambda c, e: logging.error('****** On {} ({}), {}'.format(c.route, c.queue_name, e))
         )
 
 

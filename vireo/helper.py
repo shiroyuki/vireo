@@ -15,22 +15,26 @@ def log(level, *args, **kwargs):
 
 def prepare_logger(level = logging.WARNING):
     global _logger
+    global _log_handler
 
-    try:
-        # Python 3
-        formatter = logging.Formatter('{name} @ {asctime} [{levelname}] {message}', style='{')
-    except TypeError:
-        # Python 2
-        formatter = logging.Formatter('$(name)a @ $(asctime)s [%(levelname)s] %(message)s')
+    if not _logger:
+        _logger = logging.Logger('vireo')
 
-    _logger = logging.getLogger('vireo')
+    if not _log_handler:
+        try:
+            # Python 3
+            formatter = logging.Formatter('{name} @ {asctime} [{levelname}] {message}', style='{')
+        except TypeError:
+            # Python 2
+            formatter = logging.Formatter('$(name)a @ $(asctime)s [%(levelname)s] %(message)s')
+
+        _log_handler = logging.StreamHandler()
+        _log_handler.setFormatter(formatter)
+
+        _logger.addHandler(_log_handler)
+
     _logger.setLevel(level)
-
-    log_handler = logging.StreamHandler()
-    log_handler.setLevel(level)
-    log_handler.setFormatter(formatter)
-
-    _logger.addHandler(log_handler)
+    _log_handler.setLevel(level)
 
     return _logger
 

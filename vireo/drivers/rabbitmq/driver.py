@@ -17,8 +17,34 @@ class Driver(object):
 
         :param str url: the URL to the server
         :param list consumer_classes: the list of :class:`.consumer.Consumer`-based classes
+        :param bool unlimited_retries: the flag to disable limited retry count.
+        :param callable on_connect: a callback function when the message consumption begins.
+        :param callable on_disconnect: a callback function when the message consumption is interrupted due to unexpected disconnection.
+        :param callable on_error: a callback function when the message consumption is interrupted due to exception raised from the main callback function.
+
+        Here is an example for ``on_connect``.
+
+        .. code-block:: Python
+
+            def on_connect(consumer):
+                ...
+
+        Here is an example for ``on_disconnect``.
+
+        .. code-block:: Python
+
+            def on_disconnect(consumer):
+                ...
+
+        Here is an example for ``on_error``.
+
+        .. code-block:: Python
+
+            def on_error(consumer, exception):
+                ...
     """
-    def __init__(self, url, consumer_classes = None):
+    def __init__(self, url, consumer_classes = None, unlimited_retries = False, on_connect = None,
+                 on_disconnect = None, on_error = None):
         for consumer_class in consumer_classes or []:
             assert isinstance(consumer_class, Consumer), 'This ({}) needs to be a subclass of vireo.drivers.rabbitmq.Consumer.'.format(consumer_class)
 
@@ -29,6 +55,11 @@ class Driver(object):
         self._consumers        = []
         self._has_term_signal  = False
         self._active_routes    = []
+
+        self._unlimited_retries = unlimited_retries
+        self._on_connect        = on_connect
+        self._on_disconnect     = on_disconnect
+        self._on_error          = on_error
 
     def setup_async_cleanup(self):
         """ Prepare to cleanly join all consumers asynchronously. """
@@ -197,7 +228,7 @@ class Driver(object):
                 raise NoConnectionError('Unexpectedly losed the connection while broadcasting an event')
 
     def observe(self, route, callback, resumable, distributed, options = None,
-                simple_handling = True, unlimited_retries = False, error_handler = None):
+                simple_handling = True):
         consumer_class = Consumer
 
         for overriding_consumer_class in self._consumer_classes:
@@ -207,8 +238,8 @@ class Driver(object):
                 break
 
         consumer = consumer_class(self._url, route, callback, self._shared_stream, resumable,
-                                  distributed, options, simple_handling, unlimited_retries,
-                                  error_handler)
+                                  distributed, options, simple_handling, self._unlimited_retries,
+                                  self._on_connect, self._on_disconnect, self._on_error)
 
         self._consumers.append(consumer)
 
