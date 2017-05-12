@@ -26,17 +26,33 @@ class Consumer(threading.Thread):
         :param bool resumable: the flag to indicate whether the messages are distributed evenly across all consumers on the same route
         :param dict queue_options: additional queue options
         :param bool unlimited_retries: the flag to disable limited retry count.
-        :param callable error_handler: a callback function when the message consumption is interrupted.
+        :param callable on_connect: a callback function when the message consumption begins.
+        :param callable on_disconnect: a callback function when the message consumption is interrupted due to unexpected disconnection.
+        :param callable on_error: a callback function when the message consumption is interrupted due to exception raised from the main callback function.
 
-        Here is an example for ``error_handler``.
+        Here is an example for ``on_connect``.
 
         .. code-block:: Python
 
-            def error_handler(consumer, exception):
+            def on_connect(consumer):
+                ...
+
+        Here is an example for ``on_disconnect``.
+
+        .. code-block:: Python
+
+            def on_disconnect(consumer):
+                ...
+
+        Here is an example for ``on_error``.
+
+        .. code-block:: Python
+
+            def on_error(consumer, exception):
                 ...
     """
     def __init__(self, url, route, callback, shared_stream, resumable, distributed, queue_options,
-                 simple_handling, unlimited_retries = False, error_handler = None):
+                 simple_handling, unlimited_retries = False, on_connect = None, on_disconnect = None, on_error = None):
         super().__init__(daemon = True)
 
         self.url             = url
@@ -53,9 +69,11 @@ class Consumer(threading.Thread):
         self._stopped        = False
 
         self._unlimited_retries = unlimited_retries
-        self._error_handler     = error_handler
+        self._on_connect        = on_connect
+        self._on_disconnect     = on_disconnect
+        self._on_error          = on_error
 
-        assert not self._error_handler or callable(self._error_handler), 'The error handler must be callable.'
+        assert not self._on_disconnect or callable(self._on_disconnect), 'The error handler must be callable.'
 
     @staticmethod
     def can_handle_route(routing_key):
@@ -84,9 +102,8 @@ class Consumer(threading.Thread):
             except NoConnectionError as e:
                 self._retry_count += 1
 
-                if self._error_handler:
-                    async_callback = threading.Thread(target = self._error_handler, args = (self, e), daemon = True)
-                    async_callback.start()
+                if self._on_disconnect:
+                    self._async_execute(self._on_disconnect)
 
                     log('error', 'Passed the error information occurred on {} to the error handler'.format(self._debug_route_name()))
 
@@ -115,6 +132,12 @@ class Consumer(threading.Thread):
         log('debug', 'Stopping listening to {}'.format(self._debug_route_name()))
         self._channel.stop_consuming()
 
+    def _async_execute(self, callable_method, *args):
+        params = [self, *args]
+
+        async_callback = threading.Thread(target = callable_method, args = params, daemon = True)
+        async_callback.start()
+
     def _listen(self):
         with active_connection(self.url) as channel:
             self._channel = channel
@@ -135,6 +158,10 @@ class Consumer(threading.Thread):
                     channel.basic_ack(delivery_tag = method_frame.delivery_tag)
                 except Exception as e:
                     log('error', 'Exception raised while processing the message: {}: {}'.format(type(e).__name__, e))
+
+                    if self._on_error:
+                        self._async_execute(self._on_error, e)
+
                     log('warning', 'The consumer is now paused for 5 seconds to allow quick disaster recovery.')
 
                     time.sleep(5)
@@ -152,6 +179,9 @@ class Consumer(threading.Thread):
 
                     if self._retry_count:
                         self._retry_count = 0
+
+                        if self._on_connect:
+                            self._async_execute(self._on_connect)
 
                 self._stopped = True
             except ConnectionClosed as e:
