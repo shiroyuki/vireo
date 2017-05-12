@@ -1,6 +1,10 @@
-class NoConnectionError(RuntimeError):
+from ...exception import ObservationError
+from ...exception import NoConnectionError as BaseNoConnectionError
+
+
+class NoConnectionError(BaseNoConnectionError):
     """ No connection error """
 
 
-class SubscriptionNotAllowedError(RuntimeError):
+class SubscriptionNotAllowedError(ObservationError):
     """ Subscription not allowed """
