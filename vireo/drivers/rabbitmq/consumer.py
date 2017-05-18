@@ -34,21 +34,21 @@ class Consumer(threading.Thread):
 
         .. code-block:: Python
 
-            def on_connect(consumer):
+            def on_connect(consumer = None):
                 ...
 
         Here is an example for ``on_disconnect``.
 
         .. code-block:: Python
 
-            def on_disconnect(consumer):
+            def on_disconnect(consumer = None):
                 ...
 
         Here is an example for ``on_error``.
 
         .. code-block:: Python
 
-            def on_error(consumer, exception):
+            def on_error(exception, consumer = None):
                 ...
     """
     def __init__(self, url, route, callback, shared_stream, resumable, distributed, queue_options,
@@ -133,7 +133,8 @@ class Consumer(threading.Thread):
         self._channel.stop_consuming()
 
     def _async_execute(self, callable_method, *args):
-        params = [self, *args]
+        params = [*args]
+        params.append(self)
 
         async_callback = threading.Thread(target = callable_method, args = params, daemon = True)
         async_callback.start()

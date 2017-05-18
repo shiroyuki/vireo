@@ -1,3 +1,5 @@
+import threading
+
 from .exception import NoConnectionError
 from .helper    import log
 

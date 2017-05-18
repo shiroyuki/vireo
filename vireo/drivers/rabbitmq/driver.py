@@ -26,21 +26,21 @@ class Driver(object):
 
         .. code-block:: Python
 
-            def on_connect(consumer):
+            def on_connect(consumer = None):
                 ...
 
         Here is an example for ``on_disconnect``.
 
         .. code-block:: Python
 
-            def on_disconnect(consumer):
+            def on_disconnect(consumer = None):
                 ...
 
         Here is an example for ``on_error``.
 
         .. code-block:: Python
 
-            def on_error(consumer, exception):
+            def on_error(exception, consumer = None):
                 ...
     """
     def __init__(self, url, consumer_classes = None, unlimited_retries = False, on_connect = None,
@@ -183,6 +183,10 @@ class Driver(object):
 
                 self.declare_queue(origin_queue_name, origin_queue_options)
             except ConnectionClosed:
+                if self._on_disconnect:
+                    async_callback = threading.Thread(target = self._on_disconnect, daemon = True)
+                    async_callback.start()
+
                 raise NoConnectionError('Unexpectedly losed the connection while orchestrating queues and exchange for delegation')
 
     def broadcast(self, route, message, options = None):
@@ -225,6 +229,10 @@ class Driver(object):
                 log('debug', 'Broadcasted: route={} message={} options={}'.format(route, message, options))
 
             except ConnectionClosed:
+                if self._on_disconnect:
+                    async_callback = threading.Thread(target = self._on_disconnect, daemon = True)
+                    async_callback.start()
+
                 raise NoConnectionError('Unexpectedly losed the connection while broadcasting an event')
 
     def observe(self, route, callback, resumable, distributed, options = None,
