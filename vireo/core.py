@@ -51,3 +51,11 @@ class Core(object):
             raise NoConnectionError('Failed to broadcast an event {}.'.format(event_name))
 
         log('debug', 'Broadcasted "{}" with {}'.format(event_name, data))
+
+    def async_emit(self, event_name, data = None, options = None, error_suppressed = True):
+        async_worker = threading.Thread(target = self.emit, args = (event_name, data, options, error_suppressed))
+        async_worker.start()
+
+    def async_broadcast(self, event_name, data = None, options = None, error_suppressed = True):
+        async_worker = threading.Thread(target = self.broadcast, args = (event_name, data, options, error_suppressed))
+        async_worker.start()

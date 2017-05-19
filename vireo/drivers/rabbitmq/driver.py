@@ -139,7 +139,7 @@ class Driver(object):
 
         options = fill_in_the_blank(options or {}, default_parameters)
 
-        with active_connection(self._url) as channel:
+        with active_connection(self._url, self._on_connect, self._on_disconnect) as channel:
             try:
                 log('debug', 'Publishing: route={} message={} options={}'.format(route, message, options))
                 channel.basic_publish(**options)
@@ -170,7 +170,7 @@ class Driver(object):
 
         fill_in_the_blank(exchange_options, {'exchange': exchange_name, 'exchange_type': 'direct'})
 
-        with active_connection(self._url) as channel:
+        with active_connection(self._url, self._on_connect, self._on_disconnect) as channel:
             try:
                 channel.exchange_declare(**exchange_options)
 
@@ -210,7 +210,7 @@ class Driver(object):
 
         exchange_name = options['exchange']
 
-        with active_connection(self._url) as channel:
+        with active_connection(self._url, self._on_connect, self._on_disconnect) as channel:
             try:
                 log('debug', 'Declaring a shared topic exchange')
 

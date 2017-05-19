@@ -18,17 +18,29 @@ def get_blocking_queue_connection(url):
 
 
 @contextlib.contextmanager
-def active_connection(url):
+def active_connection(url, on_connect, on_disconnect):
     log('debug', 'Connecting')
 
     try:
         connection = get_blocking_queue_connection(url)
         channel    = connection.channel()
+
+        if on_connect:
+            on_connect()
     except IncompatibleProtocolError:
+        if on_disconnect:
+            on_disconnect()
+
         raise NoConnectionError('Incompatible Protocol')
     except ChannelClosed:
+        if on_disconnect:
+            on_disconnect()
+
         raise NoConnectionError('Failed to communicate while opening an active channel')
     except ConnectionClosed:
+        if on_disconnect:
+            on_disconnect()
+
         raise NoConnectionError('Failed to connect while opening an active connection')
 
     log('debug', 'Connected and channel opened')

@@ -140,7 +140,7 @@ class Consumer(threading.Thread):
         async_callback.start()
 
     def _listen(self):
-        with active_connection(self.url) as channel:
+        with active_connection(self.url, self._on_connect, self._on_disconnect) as channel:
             self._channel = channel
 
             self._queue_name = self._declare_topic_queue(channel) if self.distributed else self._declare_shared_queue(channel)
