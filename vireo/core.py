@@ -52,10 +52,16 @@ class Core(object):
 
         log('debug', 'Broadcasted "{}" with {}'.format(event_name, data))
 
-    def async_emit(self, event_name, data = None, options = None, error_suppressed = True):
-        async_worker = threading.Thread(target = self.emit, args = (event_name, data, options, error_suppressed))
-        async_worker.start()
+    async def emit_passively(self, event_name, data = None, options = None, error_suppressed = True):
+        """ Emit (dispatch) an event asynchronously.
 
-    def async_broadcast(self, event_name, data = None, options = None, error_suppressed = True):
-        async_worker = threading.Thread(target = self.broadcast, args = (event_name, data, options, error_suppressed))
-        async_worker.start()
+            This is similar to :method:`emit`.
+        """
+        self.emit(event_name, data, options, error_suppressed)
+
+    async def broadcast_passively(self, event_name, data = None, options = None, error_suppressed = True):
+        """ Broadcast an event asynchronously.
+
+            This is similar to :method:`broadcast`.
+        """
+        self.broadcast(event_name, data, options, error_suppressed)

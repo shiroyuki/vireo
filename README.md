@@ -6,13 +6,15 @@ A library and framework for event-driven application development
 
 ## Prerequisites
 
-| Software or library | Minimum supported version | Extensively tested version |
-| ------------------- | ------------------------- | -------------------------- |
-| Python (cpython)    | 2.7 or 3.5                | 3.5 for MacOS and Fedora   |
-| pika                | 0.10                      | 0.10 for MacOS and Fedora  |
-| RabbitMQ            | 3.6                       | 3.6 supplied via Docker    |
+| Software or library | Minimum supported version | Extensively tested version          |
+| ------------------- | ------------------------- | ----------------------------------- |
+| Python (cpython)    | 3.5                       | 3.5 for MacOS, Debian, and Fedora   |
+| pika                | 0.10                      | 0.10 for MacOS, Debian, and Fedora  |
+| RabbitMQ            | 3.6                       | 3.6 supplied via Docker             |
 
-## Future supports (if anyone happens to be interested)
+## Future supports
+
+Only if anyone happens to be interested in using it with
 
 * Amazon Kinesis Stream
 * Apache Kafka

@@ -27,6 +27,12 @@ Core and Observer
 .. automodule:: vireo.observer
     :members:
 
+Exceptions
+----------
+
+.. automodule:: vireo.exception
+    :members:
+
 RabbitMQ Driver
 ---------------
 
