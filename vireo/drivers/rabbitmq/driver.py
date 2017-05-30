@@ -61,6 +61,15 @@ class Driver(object):
         self._on_disconnect     = on_disconnect
         self._on_error          = on_error
 
+    def set_on_connect(self, on_connect):
+        self._on_connect = on_connect
+
+    def set_on_disconnect(self, on_disconnect):
+        self._on_disconnect = on_disconnect
+
+    def set_on_error(self, on_error):
+        self._on_error = on_error
+
     def setup_async_cleanup(self):
         """ Prepare to cleanly join all consumers asynchronously. """
         if self._async_listener and self._async_listener.is_alive():
