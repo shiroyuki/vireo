@@ -8,12 +8,12 @@ def log(level, *args, **kwargs):
     global _logger
 
     if not _logger:
-        prepare_logger(logging.WARNING)
+        prepare_logger(logging.ERROR)
 
     getattr(_logger, level)(*args, **kwargs)
 
 
-def prepare_logger(level = logging.WARNING):
+def prepare_logger(level = logging.ERROR):
     global _logger
     global _log_handler
 
