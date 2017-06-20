@@ -261,3 +261,5 @@ class Driver(object):
         self._consumers.append(consumer)
 
         consumer.start()
+
+        return consumer

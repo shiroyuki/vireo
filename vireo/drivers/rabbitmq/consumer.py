@@ -10,7 +10,9 @@ from ...model  import Message
 from .exception import NoConnectionError
 from .helper import active_connection, fill_in_the_blank, SHARED_TOPIC_EXCHANGE_NAME, SHARED_SIGNAL_CONNECTION_LOSS
 
-MAX_RETRY_COUNT = 120
+MAX_RETRY_COUNT   = 120
+PING_INTERVAL     = 60
+PING_MESSAGE      = 'ping'
 
 
 class Consumer(threading.Thread):
@@ -52,7 +54,8 @@ class Consumer(threading.Thread):
                 ...
     """
     def __init__(self, url, route, callback, shared_stream, resumable, distributed, queue_options,
-                 simple_handling, unlimited_retries = False, on_connect = None, on_disconnect = None, on_error = None):
+                 simple_handling, unlimited_retries = False, on_connect = None, on_disconnect = None,
+                 on_error = None):
         super().__init__(daemon = True)
 
         self.url             = url
@@ -147,23 +150,54 @@ class Consumer(threading.Thread):
 
             # Declare the callback wrapper for this route.
             def callback_wrapper(channel, method_frame, header_frame, body):
-                decoded_message = json.loads(body.decode('utf8'))
-                message         = decoded_message
+                time_sequence = [time.time()]
+                raw_message   = body.decode('utf8')
 
-                if not self.simple_handling:
-                    message = Message(decoded_message, {'header': header_frame, 'method': method_frame})
+                log('info', '{}: Processing {}...'.format(self._debug_route_name(), raw_message))
 
                 try:
+                    # This is inside the try-catch block to deal with malformed data.
+                    decoded_message = json.loads(raw_message)
+
+                    time_sequence.append(time.time())
+
+                    if decoded_message == PING_MESSAGE:
+                        log('debug', '{}: Detected PING'.format(self._debug_route_name()))
+
+                        channel.basic_ack(delivery_tag = method_frame.delivery_tag)
+
+                        return
+
+                    message = (
+                        decoded_message
+                        if self.simple_handling
+                        else Message(
+                            decoded_message,
+                            {
+                                'header': header_frame,
+                                'method': method_frame,
+                            }
+                        )
+                    )
+
                     self.callback(message)
 
+                    # Acknowledge the delivery after the work is done.
                     channel.basic_ack(delivery_tag = method_frame.delivery_tag)
                 except Exception as e:
-                    log('error', 'Exception raised while processing the message: {}: {}'.format(type(e).__name__, e))
+                    log('error', '{}: Exception raised while processing the message: {}: {}'.format(
+                        self._debug_route_name(),
+                        type(e).__name__,
+                        e,
+                    ))
+
+                    # de-acknowledge the delivery when an error occurs.
+                    channel.basic_nack(delivery_tag = method_frame.delivery_tag)
 
                     if self._on_error:
                         self._async_execute(self._on_error, e)
 
-                    log('warning', 'The consumer is now paused for 5 seconds to allow quick disaster recovery.')
+                    log('warning', '{}: The consumer is now paused for 5 seconds to allow quick disaster recovery.'.format(self._debug_route_name()))
 
                     time.sleep(5)
 
@@ -191,7 +225,7 @@ class Consumer(threading.Thread):
             log('debug', 'Stopped listening to {}'.format(self._debug_route_name()))
 
     def _debug_route_name(self):
-        return '{} ({})'.format(self.route, self._queue_name)
+        return 'route {} (queue: {})'.format(self.route, self._queue_name)
 
     def _declare_shared_queue(self, channel):
         queue_options = fill_in_the_blank(

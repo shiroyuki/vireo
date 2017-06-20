@@ -26,6 +26,10 @@ docker-image:
 docker-run: docker-image
 	@docker run -it --rm $(LXC_RUN_OPTS) $(LXC_IMAGE_TAG) $(LXC_RUN_ARGS)
 
+# Run TERM the test image.
+docker-term: docker-image
+	@docker run -it --rm -w /opt/vireo -v `pwd`:/opt/vireo $(LXC_RUN_OPTS) $(LXC_IMAGE_TAG) bash
+
 clean:
 	@rm -rf build dist *.egg-info;
 
