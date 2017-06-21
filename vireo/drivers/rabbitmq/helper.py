@@ -19,7 +19,7 @@ def get_blocking_queue_connection(url):
 
 @contextlib.contextmanager
 def active_connection(url, on_connect, on_disconnect):
-    log('debug', 'Connecting')
+    # log('debug', 'Connecting')
 
     try:
         connection = get_blocking_queue_connection(url)
@@ -43,21 +43,19 @@ def active_connection(url, on_connect, on_disconnect):
 
         raise NoConnectionError('Failed to connect while opening an active connection')
 
-    log('debug', 'Connected and channel opened')
-
-    log('debug', 'Yielding the opened channel')
+    # log('debug', 'Connected and channel opened')
+    # log('debug', 'Yielding the opened channel')
 
     yield channel
 
-    log('debug', 'Regained the opened channel')
-
-    log('debug', 'Disconnecting')
+    # log('debug', 'Regained the opened channel')
+    # log('debug', 'Disconnecting')
 
     try:
         channel.close()
         connection.close()
 
-        log('debug', 'Disconnected')
+        # log('debug', 'Disconnected')
     except ChannelClosed:
         log('warning', 'Already closed the channel') # bypassed if the connection is no longer available.
     except ConnectionClosed:

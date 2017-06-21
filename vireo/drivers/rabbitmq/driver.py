@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+import uuid
 
 from pika            import BasicProperties
 from pika.exceptions import ConnectionClosed, ChannelClosed
@@ -245,7 +246,7 @@ class Driver(object):
                 raise NoConnectionError('Unexpectedly losed the connection while broadcasting an event')
 
     def observe(self, route, callback, resumable, distributed, options = None,
-                simple_handling = True):
+                simple_handling = True, controller_id = None):
         consumer_class = Consumer
 
         for overriding_consumer_class in self._consumer_classes:
@@ -254,9 +255,14 @@ class Driver(object):
 
                 break
 
+        if not controller_id:
+            controller_id = str(uuid.uuid4())
+
+            log('info', 'Observer on {} will have the self-assigned controller ID {}'.format(route, controller_id))
+
         consumer = consumer_class(self._url, route, callback, self._shared_stream, resumable,
                                   distributed, options, simple_handling, self._unlimited_retries,
-                                  self._on_connect, self._on_disconnect, self._on_error)
+                                  self._on_connect, self._on_disconnect, self._on_error, controller_id)
 
         self._consumers.append(consumer)
 

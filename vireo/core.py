@@ -1,5 +1,3 @@
-import threading
-
 from .exception import NoConnectionError
 from .helper    import log
 
@@ -51,17 +49,3 @@ class Core(object):
             raise NoConnectionError('Failed to broadcast an event {}.'.format(event_name))
 
         log('debug', 'Broadcasted "{}" with {}'.format(event_name, data))
-
-    async def emit_passively(self, event_name, data = None, options = None, error_suppressed = True):
-        """ Emit (dispatch) an event asynchronously.
-
-            This is similar to :method:`emit`.
-        """
-        self.emit(event_name, data, options, error_suppressed)
-
-    async def broadcast_passively(self, event_name, data = None, options = None, error_suppressed = True):
-        """ Broadcast an event asynchronously.
-
-            This is similar to :method:`broadcast`.
-        """
-        self.broadcast(event_name, data, options, error_suppressed)

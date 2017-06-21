@@ -1,5 +1,8 @@
+from uuid import uuid4
+
 from .core   import Core
 from .helper import log
+from .model  import RemoteSignal
 
 ASYNC_START = 1
 SYNC_START  = 2
@@ -11,49 +14,20 @@ class UnknownRunningModeError(RuntimeError):
 
 class Observer(Core):
     """ Event Observer """
-    # def open(self, event_name, options = None, delegation_ttl = None):
-    #     """ Prepare to observe an event.
-    #
-    #         :param str event_name:     the name of the queue
-    #         :param str options:        the option for the driver
-    #         :param int delegation_ttl: the TTL for the delegation*
-    #
-    #         To enable delegation, ``delegation_ttl`` must not be set to ``None`` or ``0`` or ``False``.
-    #
-    #         The delegation of the event happens when there exists no listener to that event. Then,
-    #         the message will be transfered to the delegated event, which is similar to the given
-    #         event name but suffixed with ``.delegated``. For instance, given an event name
-    #         "outbound_mail_delivery", the delegated event name will be "outbound_mail_delivery.delegated".
-    #
-    #         To handle the delegated event, simply listen to the delegated event. For example,
-    #         continuing from the previous example, you can write ``on('outbound_mail_delivery.delegated', lambda x: foo(x))``.
-    #
-    #         For example,
-    #
-    #         .. code-block:: python
-    #
-    #             app.open('foo')
-    #
-    #         .. note:: the delegation might change in the future to simplify the interface.
-    #     """
-    #     if delegation_ttl:
-    #         log('debug', 'Preparing to observe event "{}" with delegation after {} seconds'.format(event_name, delegation_ttl / 1000))
-    #
-    #         self._driver.declare_queue_with_delegation(
-    #             event_name,
-    #             delegation_ttl,
-    #             common_queue_options = options
-    #         )
-    #
-    #         log('debug', 'Ready to observe event "{}" with delegation after {} seconds'.format(event_name, delegation_ttl / 1000))
-    #
-    #         return
-    #
-    #     log('debug', 'Preparing to observe event "{}"'.format(event_name))
-    #
-    #     self._driver.declare_queue(event_name, options or {})
-    #
-    #     log('debug', 'Ready to observe event "{}"'.format(event_name))
+    def __init__(self, driver):
+        Core.__init__(self, driver)
+
+        self._identifier = str(uuid4())
+
+        self._broadcast_event_to_observer_map = {}
+        self._normal_event_to_observer_map    = {}
+
+        log('debug', 'Observer ID: {}'.format(self.id))
+
+    @property
+    def id(self) -> str:
+        """ Observer Identifier """
+        return self._identifier
 
     def on(self, event_name, callback, resumable = False, simple_handling = True):
         """ Listen to an event with a callback function.
@@ -83,7 +57,13 @@ class Observer(Core):
                 def error_handler(consumer, exception):
                     ...
         """
-        self._driver.observe(event_name, callback, resumable, False, simple_handling = simple_handling)
+        internal_observer = self._driver.observe(event_name, callback, resumable, False,
+                                                 simple_handling = simple_handling,
+                                                 controller_id = self.id)
+
+        self._register_event_handler(self._normal_event_to_observer_map, event_name, internal_observer)
+
+        return internal_observer
 
     def on_broadcast(self, event_name, callback, simple_handling = True):
         """ Listen to an distributed event with a callback function.
@@ -112,7 +92,69 @@ class Observer(Core):
                 def error_handler(consumer, exception):
                     ...
         """
-        self._driver.observe(event_name, callback, False, True, simple_handling = simple_handling)
+        internal_observer = self._driver.observe(event_name, callback, False, True,
+                                                 simple_handling = simple_handling,
+                                                 controller_id = self.id)
+
+        self._register_event_handler(self._broadcast_event_to_observer_map, event_name, internal_observer)
+
+        return internal_observer
+
+    def pause_on(self, event_name, remote_identifier = None):
+        if not remote_identifier:
+            self._remote_to_all_observers_on(self._normal_event_to_observer_map, event_name, 'pause')
+
+            return
+
+        self.emit(
+            event_name,
+            {
+                'remote_signal' : RemoteSignal.PAUSE,
+                'controller_id' : remote_identifier,
+            }
+        )
+
+    def resume_on(self, event_name, remote_identifier = None):
+        if not remote_identifier:
+            self._remote_to_all_observers_on(self._normal_event_to_observer_map, event_name, 'resume')
+
+            return
+
+        self.emit(
+            event_name,
+            {
+                'remote_signal' : RemoteSignal.RESUME,
+                'controller_id' : remote_identifier,
+            }
+        )
+
+    def pause_on_broadcast(self, event_name, remote_identifier = None):
+        if not remote_identifier:
+            self._remote_to_all_observers_on(self._broadcast_event_to_observer_map, event_name, 'pause')
+
+            return
+
+        self.broadcast(
+            event_name,
+            {
+                'remote_signal' : RemoteSignal.PAUSE,
+                'controller_id' : remote_identifier,
+            }
+        )
+
+    def resume_on_broadcast(self, event_name, remote_identifier = None):
+        if not remote_identifier:
+            self._remote_to_all_observers_on(self._broadcast_event_to_observer_map, event_name, 'resume')
+
+            return
+
+        self.broadcast(
+            event_name,
+            {
+                'remote_signal' : RemoteSignal.RESUME,
+                'controller_id' : remote_identifier,
+            }
+        )
 
     def join(self, running_mode = SYNC_START):
         """ Wait for all handlers to stop.
@@ -146,3 +188,29 @@ class Observer(Core):
                 app.stop()
         """
         self._driver.stop_consuming()
+
+    def _register_event_handler(self, observer_map, event_name, observer):
+        if event_name not in observer_map:
+            observer_map[event_name] = []
+
+        observer_map[event_name].append(observer)
+
+    def _find_all_event_handlers(self, observer_map, event_name, observer):
+        if event_name not in observer_map:
+            return []
+
+        return observer_map[event_name]
+
+    def _remote_to_all_observers_on(self, observer_map, event_name, remote_command):
+        internal_observers = self._find_all_event_handlers(observer_map, event_name)
+
+        for internal_observer in internal_observers:
+            if not hasattr(internal_observer, remote_command):
+                continue
+
+            actual_remote_command = getattr(internal_observer, remote_command)
+
+            if not callable(actual_remote_command):
+                continue
+
+            actual_remote_command()

@@ -13,7 +13,7 @@ def log(level, *args, **kwargs):
     getattr(_logger, level)(*args, **kwargs)
 
 
-def prepare_logger(level = logging.ERROR):
+def prepare_logger(level = logging.ERROR, use_fancy_format = False):
     global _logger
     global _log_handler
 
@@ -23,10 +23,19 @@ def prepare_logger(level = logging.ERROR):
     if not _log_handler:
         try:
             # Python 3
-            formatter = logging.Formatter('{name} @ {asctime} [{levelname}] {message}', style='{')
+            formatter = logging.Formatter(
+                '{asctime} | {name} | [{levelname}] {message}'
+                if use_fancy_format
+                else '{asctime} | [{levelname}] {message}',
+                style='{'
+            )
         except TypeError:
             # Python 2
-            formatter = logging.Formatter('$(name)a @ $(asctime)s [%(levelname)s] %(message)s')
+            formatter = logging.Formatter(
+                '$(name)a | [%(levelname)s] %(message)s'
+                if use_fancy_format
+                else '[%(levelname)s] %(message)s'
+            )
 
         _log_handler = logging.StreamHandler()
         _log_handler.setFormatter(formatter)
