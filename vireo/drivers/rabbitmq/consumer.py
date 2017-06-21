@@ -195,20 +195,37 @@ class Consumer(threading.Thread):
                         remote_signal = decoded_message['remote_signal']
                         remote_target = decoded_message.get('controller_id', None) or None
 
-                        if remote_signal != RemoteSignal.PING and (not remote_target or remote_target != self._controller_id):
-                            log('debug', '{}: Ignoring the remote signal (TARGET {}).'.format(
-                                self._debug_route_name(),
-                                remote_target or '(UNDEFINED)'
-                            ))
+                        if remote_signal != RemoteSignal.PING:
+                            if not remote_target:
+                                log('debug', '{}: Unable to find the remote target.'.format(
+                                    self._debug_route_name(),
+                                ))
 
-                            channel.basic_ack(delivery_tag = method_frame.delivery_tag)
+                                # Acknowledge the message to discard it as it is an invalid remote command.
+                                channel.basic_ack(delivery_tag = method_frame.delivery_tag)
 
-                            log('debug', '{}: Ignored the remote signal (TARGET {}).'.format(
-                                self._debug_route_name(),
-                                remote_target or '(UNDEFINED)'
-                            ))
+                                log('debug', '{}: Discard to an invalid remote command.'.format(
+                                    self._debug_route_name(),
+                                ))
 
-                            return
+                                return
+
+                            elif remote_target != self._controller_id:
+                                log('debug', '{}: Ignoring the remote signal (TARGET {}).'.format(
+                                    self._debug_route_name(),
+                                    remote_target
+                                ))
+
+                                # Not acknowledge the message to requeue it as this remote command
+                                # is not for the current consumer.
+                                channel.basic_nack(delivery_tag = method_frame.delivery_tag)
+
+                                log('debug', '{}: Ignored the remote signal (TARGET {}).'.format(
+                                    self._debug_route_name(),
+                                    remote_target
+                                ))
+
+                                return
 
                     time_sequence.append(time.time())
 
