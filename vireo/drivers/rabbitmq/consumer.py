@@ -159,7 +159,8 @@ class Consumer(threading.Thread):
         """ Stop consumption """
         log('debug', 'Stopping listening to {}...'.format(self._debug_route_name()))
 
-        self._channel.stop_consuming()
+        if self._channel:
+            self._channel.stop_consuming()
 
     def _async_execute(self, callable_method, *args):
         params = [*args]

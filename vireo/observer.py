@@ -187,7 +187,8 @@ class Observer(Core):
 
                 app.stop()
         """
-        self._driver.stop_consuming()
+        if self._driver:
+            self._driver.stop_consuming()
 
     def _register_event_handler(self, observer_map, event_name, observer):
         if event_name not in observer_map:
