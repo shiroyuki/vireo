@@ -29,7 +29,7 @@ class Observer(Core):
         """ Observer Identifier """
         return self._identifier
 
-    def on(self, event_name, callback, resumable = False, simple_handling = True):
+    def on(self, event_name, callback, resumable = False, simple_handling = True, options = None):
         """ Listen to an event with a callback function.
 
             :param str event_name: the name of the event
@@ -57,7 +57,7 @@ class Observer(Core):
                 def error_handler(consumer, exception):
                     ...
         """
-        internal_observer = self._driver.observe(event_name, callback, resumable, False,
+        internal_observer = self._driver.observe(event_name, callback, resumable, False, options,
                                                  simple_handling = simple_handling,
                                                  controller_id = self.id)
 
@@ -65,7 +65,7 @@ class Observer(Core):
 
         return internal_observer
 
-    def on_broadcast(self, event_name, callback, simple_handling = True):
+    def on_broadcast(self, event_name, callback, simple_handling = True, options = None):
         """ Listen to an distributed event with a callback function.
 
             :param str event_name: the name of the event
@@ -92,7 +92,7 @@ class Observer(Core):
                 def error_handler(consumer, exception):
                     ...
         """
-        internal_observer = self._driver.observe(event_name, callback, False, True,
+        internal_observer = self._driver.observe(event_name, callback, False, True, options,
                                                  simple_handling = simple_handling,
                                                  controller_id = self.id)
 

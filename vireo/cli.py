@@ -27,7 +27,7 @@ class SampleObserve(ICommand):
         parser.add_argument(
             '--bind-url',
             '-b',
-            default='amqp://guest:guest@172.17.0.1:5672/%2F'
+            default='amqp://guest:guest@127.0.0.1:5672/%2F'
         )
 
     def execute(self, args):
@@ -48,7 +48,7 @@ class SampleObserve(ICommand):
         driver = Driver(
             args.bind_url,
             unlimited_retries = True,
-            on_connect        = lambda c = None:           handle_driver_event('info', '--><-- CONNECTED',     c),
+            on_connect        = lambda c = None:           handle_driver_event('info',  '--><-- CONNECTED',    c),
             on_disconnect     = lambda c = None:           handle_driver_event('error', '-x--x- DISCONNECTED', c),
             on_error          = lambda c = None, e = None: handle_driver_event('error', '-->-x- ERROR',        c),
         )
@@ -68,6 +68,42 @@ class SampleObserve(ICommand):
         service.on('vireo.sample.secondary',        lambda x: wrapper('vireo.sample.secondary', x))
         service.on('vireo.sample.direct.resumable', lambda x: wrapper('vireo.sample.direct',    x), resumable = True)
 
+        # With custom TOPIC exchange
+        service.on(
+            'vireo.sample.custom_topic_exchange',
+            lambda x: wrapper('vireo.sample.custom_topic_exchange', x),
+            options = {
+                'exchange': {
+                    'exchange': 'vireo_sample_topic_exchange',
+                    'exchange_type': 'topic',
+                }
+            }
+        )
+
+        # With custom FANOUT exchange
+        service.on(
+            'vireo.sample.custom_fanout_exchange_1',
+            lambda x: wrapper('vireo.sample.custom_fanout_exchange_1', x),
+            options = {
+                'exchange': {
+                    'exchange': 'vireo_sample_fanout_exchange',
+                    'exchange_type': 'fanout',
+                }
+            }
+        )
+
+        service.on(
+            'vireo.sample.custom_fanout_exchange_2',
+            lambda x: wrapper('vireo.sample.custom_fanout_exchange_2', x),
+            options = {
+                'exchange': {
+                    'exchange': 'vireo_sample_fanout_exchange',
+                    'exchange_type': 'fanout',
+                }
+            }
+        )
+
+        # With handling errors
         def error_demo(x):
             if 'e' in x:
                 raise RuntimeError('Intentional Error')
@@ -109,7 +145,7 @@ class EventEmitter(ICommand):
         parser.add_argument(
             '--bind-url',
             '-b',
-            default='amqp://guest:guest@172.17.0.1:5672/%2F'
+            default='amqp://guest:guest@127.0.0.1:5672/%2F'
         )
 
     def execute(self, args):
@@ -141,7 +177,7 @@ class ObserverRemoteControl(ICommand):
         parser.add_argument(
             '--bind-url',
             '-b',
-            default='amqp://guest:guest@172.17.0.1:5672/%2F'
+            default='amqp://guest:guest@127.0.0.1:5672/%2F'
         )
 
         parser.add_argument(
@@ -214,7 +250,7 @@ class EventBroadcaster(ICommand):
         parser.add_argument(
             '--bind-url',
             '-b',
-            default='amqp://guest:guest@172.17.0.1:5672/%2F'
+            default='amqp://guest:guest@127.0.0.1:5672/%2F'
         )
 
     def execute(self, args):

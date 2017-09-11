@@ -21,17 +21,18 @@ class Consumer(threading.Thread):
 
         This is used to handle messages on one particular route/queue.
 
-        :param str url: the URL to the RabbitMQ server
-        :param str route: the route to observe
-        :param callable callback: the callback function / callable object
-        :param list shared_stream: the internal message queue for thread synchronization
-        :param bool resumable: the flag to indicate whether the consumption is resumable
-        :param bool resumable: the flag to indicate whether the messages are distributed evenly across all consumers on the same route
-        :param dict queue_options: additional queue options
-        :param bool unlimited_retries: the flag to disable limited retry count.
-        :param callable on_connect: a callback function when the message consumption begins.
-        :param callable on_disconnect: a callback function when the message consumption is interrupted due to unexpected disconnection.
-        :param callable on_error: a callback function when the message consumption is interrupted due to exception raised from the main callback function.
+        :param str      url:               the URL to the RabbitMQ server
+        :param str      route:             the route to observe
+        :param callable callback:          the callback function / callable object
+        :param list     shared_stream:     the internal message queue for thread synchronization
+        :param bool     resumable:         the flag to indicate whether the consumption is resumable
+        :param bool     resumable:         the flag to indicate whether the messages are distributed evenly across all consumers on the same route
+        :param dict     queue_options:     additional queue options
+        :param dict     exchange_options:  additional exchange options
+        :param bool     unlimited_retries: the flag to disable limited retry count.
+        :param callable on_connect:        a callback function when the message consumption begins.
+        :param callable on_disconnect:     a callback function when the message consumption is interrupted due to unexpected disconnection.
+        :param callable on_error:          a callback function when the message consumption is interrupted due to exception raised from the main callback function.
 
         Here is an example for ``on_connect``.
 
@@ -56,23 +57,38 @@ class Consumer(threading.Thread):
     """
     def __init__(self, url, route, callback, shared_stream, resumable, distributed, queue_options,
                  simple_handling, unlimited_retries = False, on_connect = None, on_disconnect = None,
-                 on_error = None, controller_id = None):
+                 on_error = None, controller_id = None, exchange_options = None):
         super().__init__(daemon = True)
 
-        self.url             = url
-        self.route           = route
-        self.callback        = callback
-        self.resumable       = resumable
-        self.distributed     = distributed
-        self.queue_options   = queue_options
-        self.simple_handling = simple_handling
-        self._retry_count    = 0
-        self._shared_stream  = shared_stream
-        self._channel        = None
-        self._queue_name     = None
-        self._paused         = False
-        self._stopped        = False
-        self._controller_id  = controller_id
+        import pprint
+        log('warning', pprint.pformat(dict(
+            url              = url,
+            route            = route,
+            callback         = callback,
+            resumable        = resumable,
+            distributed      = distributed,
+            queue_options    = queue_options    if queue_options    and isinstance(queue_options,    dict) else {},
+            exchange_options = exchange_options if exchange_options and isinstance(exchange_options, dict) else {},
+            simple_handling  = simple_handling,
+            _shared_stream   = shared_stream,
+            _controller_id   = controller_id,
+        )))
+
+        self.url              = url
+        self.route            = route
+        self.callback         = callback
+        self.resumable        = resumable
+        self.distributed      = distributed
+        self.queue_options    = queue_options    if queue_options    and isinstance(queue_options,    dict) else {}
+        self.exchange_options = exchange_options if exchange_options and isinstance(exchange_options, dict) else {}
+        self.simple_handling  = simple_handling
+        self._retry_count     = 0
+        self._shared_stream   = shared_stream
+        self._channel         = None
+        self._queue_name      = None
+        self._paused          = False
+        self._stopped         = False
+        self._controller_id   = controller_id
 
         self._unlimited_retries = unlimited_retries
         self._on_connect        = on_connect
@@ -361,48 +377,50 @@ class Consumer(threading.Thread):
         return result
 
     def _declare_shared_queue(self, channel):
-        queue_options = fill_in_the_blank(
+        queue_name = self._declare_queue(
+            channel,
             {
-                'auto_delete': not self.resumable,
-                'durable'    : self.resumable,
-                'queue'      : self.route,
-            },
-            self.queue_options or {}
+                'auto_delete' : not self.resumable,
+                'durable'     : self.resumable,
+                'queue'       : self.route,
+            }
         )
 
-        channel.queue_declare(**queue_options)
+        log('info', '[_declare_shared_queue] CONTROLLER {}: Declared a queue "{}"'.format(self._controller_id, queue_name))
+        log('info', '[_declare_shared_queue] CONTROLLER {}: Detected the additional exchange {} for queue {}'.format(self._controller_id, self.exchange_options, queue_name))
 
-        log('info', 'CONTROLLER {}: Declared a queue "{}"'.format(self._controller_id, self.route))
+        if self.exchange_options:
+            self._bind_queue(channel, queue_name, self.exchange_options)
 
         return self.route
 
     def _declare_recovery_queue(self, channel):
-        queue_options = fill_in_the_blank(
+        queue_name = self._declare_queue(
+            channel,
             {
                 'auto_delete': not self.resumable,
                 'durable'    : self.resumable,
                 'queue'      : self._recovery_queue_name,
-            },
-            self.queue_options or {}
+            }
         )
 
-        channel.queue_declare(**queue_options)
-
-        log('info', 'CONTROLLER {}: Declared a recovery queue for ROUTE {}'.format(self._controller_id, self.route))
+        log('info', '[_declare_recovery_queue] CONTROLLER {}: Declared a recovery queue for ROUTE {}'.format(self._controller_id, queue_name))
 
         return self.route
 
     def _declare_topic_queue(self, channel):
         # Currently not supporting resumability.
-        queue_options = fill_in_the_blank(
+        temp_queue_name = self._declare_queue(
+            channel,
             {
                 'auto_delete': True,
                 'queue'      : '',
-            },
-            self.queue_options or {}
+            }
         )
 
-        channel.exchange_declare(
+        log('info', '[_declare_topic_queue] CONTROLLER {}: Declared a temporary queue "{}"'.format(self._controller_id, temp_queue_name))
+
+        exchange_options = dict(
             exchange      = SHARED_TOPIC_EXCHANGE_NAME,
             exchange_type = 'topic',
             passive       = False,
@@ -410,13 +428,33 @@ class Consumer(threading.Thread):
             auto_delete   = False,
         )
 
-        response        = channel.queue_declare(**queue_options)
-        temp_queue_name = response.method.queue
+        exchange_options.update(self.exchange_options)
 
-        log('info', 'CONTROLLER {}: Declared a temporary queue "{}"'.format(self._controller_id, temp_queue_name))
-
-        log('info', 'CONTROLLER {}: Binding a temporary queue "{}" to route {}'.format(self._controller_id, temp_queue_name, self.route))
-        channel.queue_bind(temp_queue_name, SHARED_TOPIC_EXCHANGE_NAME, self.route)
-        log('info', 'CONTROLLER {}: Bound a temporary queue "{}" to route {}'.format(self._controller_id, temp_queue_name, self.route))
+        self._bind_queue(channel, temp_queue_name, exchange_options)
 
         return temp_queue_name
+
+    def _declare_queue(self, channel, default_queue_options):
+        queue_options = fill_in_the_blank(
+            default_queue_options,
+            self.queue_options or {}
+        )
+
+        response   = channel.queue_declare(**queue_options)
+        queue_name = response.method.queue
+
+        return queue_name
+
+    def _bind_queue(self, channel, queue_name, exchange_options):
+        assert 'exchange' in exchange_options
+
+        exchange_name  = exchange_options['exchange']
+        debugging_info = (self._controller_id, queue_name, self.route, exchange_name)
+
+        channel.exchange_declare(**exchange_options)
+
+        log('info', '[_bind_queue] CONTROLLER {}: Binding a queue "{}" to route {} on exchange {}'.format(*debugging_info))
+
+        channel.queue_bind(queue_name, exchange_name, self.route)
+
+        log('info', '[_bind_queue] CONTROLLER {}: Bound a queue "{}" to route {} on exchange {}'.format(*debugging_info))

@@ -260,9 +260,24 @@ class Driver(object):
 
             log('info', 'Observer on {} will have the self-assigned controller ID {}'.format(route, controller_id))
 
-        consumer = consumer_class(self._url, route, callback, self._shared_stream, resumable,
-                                  distributed, options, simple_handling, self._unlimited_retries,
-                                  self._on_connect, self._on_disconnect, self._on_error, controller_id)
+        parameters = dict(
+            url               = self._url,
+            route             = route,
+            callback          = callback,
+            shared_stream     = self._shared_stream,
+            resumable         = resumable,
+            distributed       = distributed,
+            queue_options     = options.get('queue', None) if options else None,
+            simple_handling   = simple_handling,
+            unlimited_retries = self._unlimited_retries,
+            on_connect        = self._on_connect,
+            on_disconnect     = self._on_disconnect,
+            on_error          = self._on_error,
+            controller_id     = controller_id,
+            exchange_options  = options.get('exchange', None) if options else None,
+        )
+
+        consumer = consumer_class(**parameters)
 
         self._consumers.append(consumer)
 
