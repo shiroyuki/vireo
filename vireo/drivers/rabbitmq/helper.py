@@ -56,7 +56,11 @@ def active_connection(url, on_connect, on_disconnect):
         connection.close()
 
         # log('debug', 'Disconnected')
-    except ChannelClosed:
-        log('warning', 'Already closed the channel') # bypassed if the connection is no longer available.
-    except ConnectionClosed:
-        log('warning', 'Already disconnected') # bypassed if the connection is no longer available.
+    except ChannelClosed as e:
+        log('warning', '[active_connection] Unexpectedly closed the channel. ({})'.format(e))
+
+        # bypassed if the connection is no longer available.
+    except ConnectionClosed as e:
+        log('warning', '[active_connection] Unexpectedly disconnected. ({})'.format(e))
+
+        # bypassed if the connection is no longer available.

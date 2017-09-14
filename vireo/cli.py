@@ -132,6 +132,12 @@ class EventEmitter(ICommand):
         )
 
         parser.add_argument(
+            '--exchange',
+            '-e',
+            required = False,
+        )
+
+        parser.add_argument(
             'event_name',
             help = 'The name of the event (e.g., "sample.primary")'
         )
@@ -149,12 +155,17 @@ class EventEmitter(ICommand):
         )
 
     def execute(self, args):
+        options = {}
+
+        if args.exchange:
+            options['exchange'] = args.exchange
+
         prepare_logger(logging.DEBUG if args.debug else logging.INFO)
 
         driver  = Driver(args.bind_url)
         service = Core(driver)
 
-        service.emit(args.event_name, json.loads(args.event_data) if args.event_data else None)
+        service.emit(args.event_name, json.loads(args.event_data) if args.event_data else None, options)
 
 
 class ObserverRemoteControl(ICommand):
