@@ -10,7 +10,7 @@ from ...helper import log
 from ...model  import Message, RemoteSignal
 
 from .exception import NoConnectionError
-from .helper import active_connection, fill_in_the_blank, SHARED_TOPIC_EXCHANGE_NAME, SHARED_SIGNAL_CONNECTION_LOSS
+from .helper    import active_connection, fill_in_the_blank, SHARED_DIRECT_EXCHANGE_NAME, SHARED_TOPIC_EXCHANGE_NAME, SHARED_SIGNAL_CONNECTION_LOSS
 
 MAX_RETRY_COUNT = 120
 PING_MESSAGE      = 'ping'
@@ -60,27 +60,30 @@ class Consumer(threading.Thread):
                  on_error = None, controller_id = None, exchange_options = None):
         super().__init__(daemon = True)
 
-        import pprint
-        log('warning', pprint.pformat(dict(
-            url              = url,
-            route            = route,
-            callback         = callback,
-            resumable        = resumable,
-            distributed      = distributed,
-            queue_options    = queue_options    if queue_options    and isinstance(queue_options,    dict) else {},
-            exchange_options = exchange_options if exchange_options and isinstance(exchange_options, dict) else {},
-            simple_handling  = simple_handling,
-            _shared_stream   = shared_stream,
-            _controller_id   = controller_id,
-        )))
+        queue_options    = queue_options    if queue_options    and isinstance(queue_options,    dict) else {}
+        exchange_options = exchange_options if exchange_options and isinstance(exchange_options, dict) else {}
+
+        # import pprint
+        # log('warning', pprint.pformat(dict(
+        #     url              = url,
+        #     route            = route,
+        #     callback         = callback,
+        #     resumable        = resumable,
+        #     distributed      = distributed,
+        #     queue_options    = queue_options,
+        #     exchange_options = exchange_options,
+        #     simple_handling  = simple_handling,
+        #     _shared_stream   = shared_stream,
+        #     _controller_id   = controller_id,
+        # )))
 
         self.url              = url
         self.route            = route
         self.callback         = callback
         self.resumable        = resumable
         self.distributed      = distributed
-        self.queue_options    = queue_options    if queue_options    and isinstance(queue_options,    dict) else {}
-        self.exchange_options = exchange_options if exchange_options and isinstance(exchange_options, dict) else {}
+        self.queue_options    = queue_options
+        self.exchange_options = exchange_options
         self.simple_handling  = simple_handling
         self._retry_count     = 0
         self._shared_stream   = shared_stream
@@ -386,11 +389,17 @@ class Consumer(threading.Thread):
             }
         )
 
-        log('info', '[_declare_shared_queue] CONTROLLER {}: Declared a queue "{}"'.format(self._controller_id, queue_name))
-        log('info', '[_declare_shared_queue] CONTROLLER {}: Detected the additional exchange {} for queue {}'.format(self._controller_id, self.exchange_options, queue_name))
+        log('info', '[_declare_shared_queue] CONTROLLER {}: Declared a shared queue "{}"'.format(self._controller_id, queue_name))
 
-        if self.exchange_options:
-            self._bind_queue(channel, queue_name, self.exchange_options)
+        exchange_options = dict(
+            exchange      = self.exchange_options.get('name', SHARED_DIRECT_EXCHANGE_NAME),
+            exchange_type = self.exchange_options.get('type', 'direct'),
+            passive       = self.exchange_options.get('passive', False),
+            durable       = self.exchange_options.get('durable', True),
+            auto_delete   = self.exchange_options.get('auto_delete', False),
+        )
+
+        self._bind_queue(channel, queue_name, exchange_options)
 
         return self.route
 
@@ -418,14 +427,14 @@ class Consumer(threading.Thread):
             }
         )
 
-        log('info', '[_declare_topic_queue] CONTROLLER {}: Declared a temporary queue "{}"'.format(self._controller_id, temp_queue_name))
+        log('info', '[_declare_topic_queue] CONTROLLER {}: Declared a distributed queue "{}"'.format(self._controller_id, temp_queue_name))
 
         exchange_options = dict(
-            exchange      = SHARED_TOPIC_EXCHANGE_NAME,
-            exchange_type = 'topic',
-            passive       = False,
-            durable       = True,
-            auto_delete   = False,
+            exchange      = self.exchange_options.get('name', SHARED_TOPIC_EXCHANGE_NAME),
+            exchange_type = self.exchange_options.get('type', 'topic'),
+            passive       = self.exchange_options.get('passive', False),
+            durable       = self.exchange_options.get('durable', True),
+            auto_delete   = self.exchange_options.get('auto_delete', False),
         )
 
         exchange_options.update(self.exchange_options)

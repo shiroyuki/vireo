@@ -10,18 +10,36 @@ from ...helper import fill_in_the_blank, log
 
 from .consumer  import Consumer
 from .exception import NoConnectionError, SubscriptionNotAllowedError
-from .helper    import active_connection, SHARED_TOPIC_EXCHANGE_NAME, SHARED_SIGNAL_CONNECTION_LOSS
+from .helper    import active_connection, SHARED_DIRECT_EXCHANGE_NAME, SHARED_TOPIC_EXCHANGE_NAME, SHARED_SIGNAL_CONNECTION_LOSS
 
 
 class Driver(object):
     """ Driver for RabbitMQ
 
-        :param str url: the URL to the server
-        :param list consumer_classes: the list of :class:`.consumer.Consumer`-based classes
-        :param bool unlimited_retries: the flag to disable limited retry count.
-        :param callable on_connect: a callback function when the message consumption begins.
-        :param callable on_disconnect: a callback function when the message consumption is interrupted due to unexpected disconnection.
-        :param callable on_error: a callback function when the message consumption is interrupted due to exception raised from the main callback function.
+        :param str      url:               the URL to the server
+        :param list     consumer_classes:  the list of :class:`.consumer.Consumer`-based classes
+        :param bool     unlimited_retries: the flag to disable limited retry count.
+        :param callable on_connect:        a callback function when the message consumption begins.
+        :param callable on_disconnect:     a callback function when the message consumption is interrupted due to unexpected disconnection.
+        :param callable on_error:          a callback function when the message consumption is interrupted due to exception raised from the main callback function.
+
+        :param dict default_publishing_options:                  the default options for publishing (normal)
+        :param dict default_broadcasting_options:                the default options for publishing (broadcast)
+        :param dict default_consuming_shared_queue_options:      the default options for consuming share queue
+        :param dict default_consuming_distributed_queue_options: the default options for consuming distributed queue
+
+        ``default_publishing_options`` and ``default_broadcasting_options`` only take ``exchange``
+        to allow overriding the default exchange.
+
+        ``default_consuming_shared_queue_options`` and ``default_consuming_distributed_queue_options``
+        will have the data structure like this::
+
+            {
+                'exchange': {
+                    'name': str, # It is "exchange" in pika's exchange_declare.
+                    'type': str, # It is "exchange_type" in pika's exchange_declare.
+                }
+            }
 
         Here is an example for ``on_connect``.
 
@@ -45,7 +63,9 @@ class Driver(object):
                 ...
     """
     def __init__(self, url, consumer_classes = None, unlimited_retries = False, on_connect = None,
-                 on_disconnect = None, on_error = None):
+                 on_disconnect = None, on_error = None, default_publishing_options : dict = None,
+                 default_broadcasting_options : dict = None, default_consuming_shared_queue_options : dict = None,
+                 default_consuming_distributed_queue_options : dict = None):
         for consumer_class in consumer_classes or []:
             assert isinstance(consumer_class, Consumer), 'This ({}) needs to be a subclass of vireo.drivers.rabbitmq.Consumer.'.format(consumer_class)
 
@@ -56,6 +76,11 @@ class Driver(object):
         self._consumers        = []
         self._has_term_signal  = False
         self._active_routes    = []
+
+        self._default_publishing_options                  = default_publishing_options                  or {}
+        self._default_broadcasting_options                = default_broadcasting_options                or {}
+        self._default_consuming_shared_queue_options      = default_consuming_shared_queue_options      or {}
+        self._default_consuming_distributed_queue_options = default_consuming_distributed_queue_options or {}
 
         self._unlimited_retries = unlimited_retries
         self._on_connect        = on_connect
@@ -140,12 +165,12 @@ class Driver(object):
             :param str message: the message
             :param dict options: additional options for basic_publish
         """
-        default_parameters = {
-            'exchange'    : '',
-            'routing_key' : route or '',
-            'body'        : json.dumps(message),
-            'properties'  : BasicProperties(content_type = 'application/json'),
-        }
+        default_parameters = self._generate_default_publish_options(
+            self._default_publishing_options,
+            SHARED_DIRECT_EXCHANGE_NAME,
+            route,
+            message,
+        )
 
         options = fill_in_the_blank(options or {}, default_parameters)
 
@@ -206,12 +231,12 @@ class Driver(object):
             :param str message:  the message
             :param dict options: additional options for basic_publish
         """
-        default_parameters = {
-            'exchange'    : '',
-            'routing_key' : route or '',
-            'body'        : json.dumps(message),
-            'properties'  : BasicProperties(content_type = 'application/json'),
-        }
+        default_parameters = self._generate_default_publish_options(
+            self._default_broadcasting_options,
+            SHARED_TOPIC_EXCHANGE_NAME,
+            route,
+            message,
+        )
 
         options = fill_in_the_blank(options or {}, default_parameters)
 
@@ -260,6 +285,12 @@ class Driver(object):
 
             log('info', 'Observer on {} will have the self-assigned controller ID {}'.format(route, controller_id))
 
+        default_options = self._default_consuming_distributed_queue_options if distributed else self._default_consuming_shared_queue_options
+        given_options   = options or {}
+
+        queue_options    = fill_in_the_blank(given_options.get('queue',    {}), default_options.get('queue',    {}))
+        exchange_options = fill_in_the_blank(given_options.get('exchange', {}), default_options.get('exchange', {}))
+
         parameters = dict(
             url               = self._url,
             route             = route,
@@ -267,14 +298,14 @@ class Driver(object):
             shared_stream     = self._shared_stream,
             resumable         = resumable,
             distributed       = distributed,
-            queue_options     = options.get('queue', None) if options else None,
+            queue_options     = queue_options,
             simple_handling   = simple_handling,
             unlimited_retries = self._unlimited_retries,
             on_connect        = self._on_connect,
             on_disconnect     = self._on_disconnect,
             on_error          = self._on_error,
             controller_id     = controller_id,
-            exchange_options  = options.get('exchange', None) if options else None,
+            exchange_options  = exchange_options,
         )
 
         consumer = consumer_class(**parameters)
@@ -284,3 +315,12 @@ class Driver(object):
         consumer.start()
 
         return consumer
+
+    def _generate_default_publish_options(self, default_publishing_options, default_exchange_name,
+                                          route, message):
+        return {
+            'exchange'    : default_publishing_options.get('exchange', default_exchange_name),
+            'routing_key' : route,
+            'body'        : json.dumps(message),
+            'properties'  : BasicProperties(content_type = 'application/json'),
+        }

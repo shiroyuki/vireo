@@ -1,5 +1,6 @@
 {
     "imports": [
-        "vireo.cli"
+        "vireo.cli",
+        "vireo.sample"
     ]
 }

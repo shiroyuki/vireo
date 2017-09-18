@@ -8,6 +8,7 @@ from ...helper  import fill_in_the_blank, log
 from .exception import NoConnectionError
 
 SHARED_SIGNAL_CONNECTION_LOSS = 1
+SHARED_DIRECT_EXCHANGE_NAME   = 'vireo_default_direct_r0'
 SHARED_TOPIC_EXCHANGE_NAME    = 'vireo_default_topic_r0'
 
 

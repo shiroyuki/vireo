@@ -1,122 +1,13 @@
 import json
 import logging
-import pprint
-import sys
 
 from gallium.interface import ICommand
 
 from .core             import Core
-from .drivers.rabbitmq import Driver, NoConnectionError
+from .drivers.rabbitmq import Driver
 from .model            import RemoteSignal
-from .observer         import Observer, SYNC_START
+from .observer         import Observer
 from .helper           import prepare_logger
-
-
-class SampleObserve(ICommand):
-    """ Run the sample observer. """
-    def identifier(self):
-        return 'sample.observe'
-
-    def define(self, parser):
-        parser.add_argument(
-            '--debug',
-            '-d',
-            action = 'store_true'
-        )
-
-        parser.add_argument(
-            '--bind-url',
-            '-b',
-            default='amqp://guest:guest@127.0.0.1:5672/%2F'
-        )
-
-    def execute(self, args):
-        logger = prepare_logger(logging.DEBUG if args.debug else logging.INFO)
-
-        def handle_driver_event(level, label, c):
-            if not c or not hasattr(c, 'route') or not hasattr(c, 'queue_name'):
-                getattr(logger, level.lower())(label)
-
-                return
-
-            getattr(logger, level.lower())('{} ({}): {}'.format(
-                c.route,
-                c.queue_name,
-                label,
-            ))
-
-        driver = Driver(
-            args.bind_url,
-            unlimited_retries = True,
-            on_connect        = lambda c = None:           handle_driver_event('info',  '--><-- CONNECTED',    c),
-            on_disconnect     = lambda c = None:           handle_driver_event('error', '-x--x- DISCONNECTED', c),
-            on_error          = lambda c = None, e = None: handle_driver_event('error', '-->-x- ERROR',        c),
-        )
-
-        service = Observer(driver)
-
-        # In this example, delegation is disabled.
-        # vireo.open('vireo.sample.primary', delegation_ttl = 5000)
-        # vireo.on('vireo.sample.primary.delegated', lambda x: print('vireo.sample.primary.delegated: {}'.format(x)))
-
-        def wrapper(label, data):
-            print('[SAMPLE] {}:'.format(label))
-
-            pprint.pprint(data, indent = 2)
-
-        service.on('vireo.sample.direct',           lambda x: wrapper('vireo.sample.direct',    x))
-        service.on('vireo.sample.secondary',        lambda x: wrapper('vireo.sample.secondary', x))
-        service.on('vireo.sample.direct.resumable', lambda x: wrapper('vireo.sample.direct',    x), resumable = True)
-
-        # With custom TOPIC exchange
-        service.on(
-            'vireo.sample.custom_topic_exchange',
-            lambda x: wrapper('vireo.sample.custom_topic_exchange', x),
-            options = {
-                'exchange': {
-                    'exchange': 'vireo_sample_topic_exchange',
-                    'exchange_type': 'topic',
-                }
-            }
-        )
-
-        # With custom FANOUT exchange
-        service.on(
-            'vireo.sample.custom_fanout_exchange_1',
-            lambda x: wrapper('vireo.sample.custom_fanout_exchange_1', x),
-            options = {
-                'exchange': {
-                    'exchange': 'vireo_sample_fanout_exchange',
-                    'exchange_type': 'fanout',
-                }
-            }
-        )
-
-        service.on(
-            'vireo.sample.custom_fanout_exchange_2',
-            lambda x: wrapper('vireo.sample.custom_fanout_exchange_2', x),
-            options = {
-                'exchange': {
-                    'exchange': 'vireo_sample_fanout_exchange',
-                    'exchange_type': 'fanout',
-                }
-            }
-        )
-
-        # With handling errors
-        def error_demo(x):
-            if 'e' in x:
-                raise RuntimeError('Intentional Error')
-
-            wrapper('vireo.sample.error', x)
-
-        service.on('vireo.sample.error', error_demo)
-
-
-        service.on_broadcast('vireo.sample.broadcast.one', lambda x: wrapper('vireo.sample.broadcast.one', x))
-        service.on_broadcast('vireo.sample.broadcast.two', lambda x: wrapper('vireo.sample.broadcast.two', x))
-
-        service.join(SYNC_START)
 
 
 class EventEmitter(ICommand):
