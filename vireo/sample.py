@@ -1,10 +1,11 @@
+import json
 import logging
 import pprint
 
 from gallium.interface import ICommand
 
 from .drivers.rabbitmq import Driver
-from .observer         import Observer, SYNC_START
+from .observer         import Core, Observer, SYNC_START
 from .helper           import prepare_logger
 
 
@@ -192,3 +193,47 @@ class SampleObserveWithCustomOptions(ICommand):
         )
 
         service.join(SYNC_START)
+
+
+class SamplePublishWithCustomOptions(ICommand):
+    """ Run the sample observer with custom options """
+    def identifier(self):
+        return 'sample.publish.custom'
+
+    def define(self, parser):
+        parser.add_argument(
+            '--debug',
+            '-d',
+            action = 'store_true'
+        )
+
+        parser.add_argument(
+            '--bind-url',
+            '-b',
+            default='amqp://guest:guest@127.0.0.1:5672/%2F'
+        )
+
+        parser.add_argument(
+            'event_name',
+            help = 'The name of the event (e.g., "sample.primary")'
+        )
+
+        parser.add_argument(
+            'event_data',
+            help  = 'The JSON-compatible string data of the event',
+            nargs = '?'
+        )
+
+    def execute(self, args):
+        prepare_logger(logging.DEBUG if args.debug else logging.INFO)
+
+        driver = Driver(
+            args.bind_url,
+            default_publishing_options = {
+                'exchange': 'vireo_sample_custom_default_exchange',
+            },
+        )
+
+        service = Core(driver)
+
+        service.emit(args.event_name, json.loads(args.event_data) if args.event_data else None)
