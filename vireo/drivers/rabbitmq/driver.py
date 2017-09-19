@@ -16,7 +16,7 @@ from .helper    import active_connection, SHARED_DIRECT_EXCHANGE_NAME, SHARED_TO
 class Driver(object):
     """ Driver for RabbitMQ
 
-        :param str      url:               the URL to the server
+        :param          url:               the URL to the server (``str`` for a single connection or ``list`` for rotation)
         :param list     consumer_classes:  the list of :class:`.consumer.Consumer`-based classes
         :param bool     unlimited_retries: the flag to disable limited retry count.
         :param callable on_connect:        a callback function when the message consumption begins.
@@ -86,6 +86,21 @@ class Driver(object):
         self._on_connect        = on_connect
         self._on_disconnect     = on_disconnect
         self._on_error          = on_error
+
+        self._requested_url_counter = 0 # used for rotation
+        self._total_url_count       = 1 if isinstance(self._url, str) else len(self._url)
+
+    @property
+    def url(self):
+        connection_url = self._url
+
+        if isinstance(self._url, (tuple, list)):
+            self._requested_url_counter += 1
+
+            connection_index = self._requested_url_counter % self._total_url_count
+            connection_url   = self._url[connection_index]
+
+        return connection_url
 
     def set_on_connect(self, on_connect):
         self._on_connect = on_connect
@@ -174,7 +189,7 @@ class Driver(object):
 
         options = fill_in_the_blank(options or {}, default_parameters)
 
-        with active_connection(self._url, self._on_connect, self._on_disconnect) as channel:
+        with active_connection(self.url, self._on_connect, self._on_disconnect) as channel:
             try:
                 log('debug', 'Publishing: route={} message={} options={}'.format(route, message, options))
                 channel.basic_publish(**options)
@@ -205,7 +220,7 @@ class Driver(object):
 
         fill_in_the_blank(exchange_options, {'exchange': exchange_name, 'exchange_type': 'direct'})
 
-        with active_connection(self._url, self._on_connect, self._on_disconnect) as channel:
+        with active_connection(self.url, self._on_connect, self._on_disconnect) as channel:
             try:
                 channel.exchange_declare(**exchange_options)
 
@@ -245,7 +260,7 @@ class Driver(object):
 
         exchange_name = options['exchange']
 
-        with active_connection(self._url, self._on_connect, self._on_disconnect) as channel:
+        with active_connection(self.url, self._on_connect, self._on_disconnect) as channel:
             try:
                 log('debug', 'Declaring a shared topic exchange')
 
@@ -292,7 +307,7 @@ class Driver(object):
         exchange_options = fill_in_the_blank(given_options.get('exchange', {}), default_options.get('exchange', {}))
 
         parameters = dict(
-            url               = self._url,
+            url               = self.url,
             route             = route,
             callback          = callback,
             shared_stream     = self._shared_stream,

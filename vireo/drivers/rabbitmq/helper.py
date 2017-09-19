@@ -21,6 +21,7 @@ def get_blocking_queue_connection(url):
 @contextlib.contextmanager
 def active_connection(url, on_connect, on_disconnect):
     # log('debug', 'Connecting')
+    log('debug', '[active_connection] New active connection to {}'.format(url))
 
     try:
         connection = get_blocking_queue_connection(url)

@@ -21,7 +21,7 @@ class Consumer(threading.Thread):
 
         This is used to handle messages on one particular route/queue.
 
-        :param str      url:               the URL to the RabbitMQ server
+        :param str      url:               the URL to the server
         :param str      route:             the route to observe
         :param callable callback:          the callback function / callable object
         :param list     shared_stream:     the internal message queue for thread synchronization
@@ -62,20 +62,6 @@ class Consumer(threading.Thread):
 
         queue_options    = queue_options    if queue_options    and isinstance(queue_options,    dict) else {}
         exchange_options = exchange_options if exchange_options and isinstance(exchange_options, dict) else {}
-
-        # import pprint
-        # log('warning', pprint.pformat(dict(
-        #     url              = url,
-        #     route            = route,
-        #     callback         = callback,
-        #     resumable        = resumable,
-        #     distributed      = distributed,
-        #     queue_options    = queue_options,
-        #     exchange_options = exchange_options,
-        #     simple_handling  = simple_handling,
-        #     _shared_stream   = shared_stream,
-        #     _controller_id   = controller_id,
-        # )))
 
         self.url              = url
         self.route            = route
