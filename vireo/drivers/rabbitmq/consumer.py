@@ -423,8 +423,6 @@ class Consumer(threading.Thread):
             auto_delete   = self.exchange_options.get('auto_delete', False),
         )
 
-        exchange_options.update(self.exchange_options)
-
         self._bind_queue(channel, temp_queue_name, exchange_options)
 
         return temp_queue_name
