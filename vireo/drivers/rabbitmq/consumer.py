@@ -1,7 +1,9 @@
 import json
+import sys
 import threading
 import traceback
 import time
+import uuid
 
 from pika            import BasicProperties
 from pika.exceptions import ConnectionClosed, ChannelClosed, IncompatibleProtocolError
@@ -57,7 +59,8 @@ class Consumer(threading.Thread):
     """
     def __init__(self, url, route, callback, shared_stream, resumable, distributed, queue_options,
                  simple_handling, unlimited_retries = False, on_connect = None, on_disconnect = None,
-                 on_error = None, controller_id = None, exchange_options = None):
+                 on_error = None, controller_id = None, exchange_options = None, auto_acknowledge = False,
+                 send_sigterm_on_disconnect = True):
         super().__init__(daemon = True)
 
         queue_options    = queue_options    if queue_options    and isinstance(queue_options,    dict) else {}
@@ -78,7 +81,11 @@ class Consumer(threading.Thread):
         self._paused          = False
         self._stopped         = False
         self._controller_id   = controller_id
+        self._consumer_id     = str(uuid.uuid4())
 
+        self._send_sigterm_on_disconnect = send_sigterm_on_disconnect
+
+        self._auto_acknowledge  = auto_acknowledge
         self._unlimited_retries = unlimited_retries
         self._on_connect        = on_connect
         self._on_disconnect     = on_disconnect
@@ -137,6 +144,11 @@ class Consumer(threading.Thread):
                 log('warning', '{}: Unexpected connection loss detected ({})'.format(self._debug_route_name(), e))
 
                 self._shared_stream.append(SHARED_SIGNAL_CONNECTION_LOSS)
+
+                if self._send_sigterm_on_disconnect:
+                    log('error', '{}: Terminated the process on disconnect.'.format(self._debug_route_name()))
+
+                    sys.exit(1)
 
         log('debug', '{}: Inactive'.format(self._debug_route_name()))
 
@@ -336,7 +348,10 @@ class Consumer(threading.Thread):
 
             log('debug', '{}: Listening...'.format(self._debug_route_name()))
 
-            channel.basic_consume(callback_wrapper, self._queue_name)
+            if self._auto_acknowledge:
+                log('warning', '{}: Auto-acknowledgement is enabled.'.format(self._debug_route_name()))
+
+            channel.basic_consume(callback_wrapper, self._queue_name, no_ack=not self._auto_acknowledge)
 
             # NOTE there is a bug in start_consuming that prevents stop_consuming from cleanly
             #      stopping message consumption. The following is a hack suggested in StackOverflow.
@@ -358,7 +373,7 @@ class Consumer(threading.Thread):
             log('debug', 'Stopped listening to {}'.format(self._debug_route_name()))
 
     def _debug_route_name(self):
-        result = 'ROUTE {}/{}'.format(self._controller_id, self.route)
+        result = 'ROUTE {}/{}/{}'.format(self._controller_id, self.route, self._consumer_id)
 
         if self._queue_name:
             return '{} (QUEUE {})'.format(result, self._queue_name)

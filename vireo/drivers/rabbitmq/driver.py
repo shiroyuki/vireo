@@ -65,7 +65,8 @@ class Driver(object):
     def __init__(self, url, consumer_classes = None, unlimited_retries = False, on_connect = None,
                  on_disconnect = None, on_error = None, default_publishing_options : dict = None,
                  default_broadcasting_options : dict = None, default_consuming_shared_queue_options : dict = None,
-                 default_consuming_distributed_queue_options : dict = None):
+                 default_consuming_distributed_queue_options : dict = None, auto_acknowledge = False,
+                 send_sigterm_on_disconnect = True):
         for consumer_class in consumer_classes or []:
             assert isinstance(consumer_class, Consumer), 'This ({}) needs to be a subclass of vireo.drivers.rabbitmq.Consumer.'.format(consumer_class)
 
@@ -76,6 +77,9 @@ class Driver(object):
         self._consumers        = []
         self._has_term_signal  = False
         self._active_routes    = []
+        self._auto_acknowledge = auto_acknowledge
+
+        self._send_sigterm_on_disconnect = send_sigterm_on_disconnect
 
         self._default_publishing_options                  = default_publishing_options                  or {}
         self._default_broadcasting_options                = default_broadcasting_options                or {}
@@ -321,6 +325,8 @@ class Driver(object):
             on_error          = self._on_error,
             controller_id     = controller_id,
             exchange_options  = exchange_options,
+            auto_acknowledge  = self._auto_acknowledge,
+            send_sigterm_on_disconnect = self._send_sigterm_on_disconnect,
         )
 
         consumer = consumer_class(**parameters)
