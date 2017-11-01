@@ -220,7 +220,8 @@ class Consumer(threading.Thread):
                                 ))
 
                                 # Acknowledge the message to discard it as it is an invalid remote command.
-                                channel.basic_ack(delivery_tag = method_frame.delivery_tag)
+                                if not self._auto_acknowledge:
+                                    channel.basic_ack(delivery_tag = method_frame.delivery_tag)
 
                                 log('debug', '{}: Discard to an invalid remote command.'.format(
                                     self._debug_route_name(),
@@ -250,7 +251,8 @@ class Consumer(threading.Thread):
                     if remote_signal == RemoteSignal.PING:
                         log('debug', '{}: Detected PING signal'.format(self._debug_route_name()))
 
-                        channel.basic_ack(delivery_tag = method_frame.delivery_tag)
+                        if not self._auto_acknowledge:
+                            channel.basic_ack(delivery_tag = method_frame.delivery_tag)
 
                         log('debug', '{}: Ready (post-ping)'.format(self._debug_route_name()))
 
@@ -261,7 +263,8 @@ class Consumer(threading.Thread):
 
                         self.resume()
 
-                        channel.basic_ack(delivery_tag = method_frame.delivery_tag)
+                        if not self._auto_acknowledge:
+                            channel.basic_ack(delivery_tag = method_frame.delivery_tag)
 
                         log('debug', '{}: Reactivated'.format(self._debug_route_name()))
 
@@ -272,7 +275,8 @@ class Consumer(threading.Thread):
 
                         self.pause()
 
-                        channel.basic_ack(delivery_tag = method_frame.delivery_tag)
+                        if not self._auto_acknowledge:
+                            channel.basic_ack(delivery_tag = method_frame.delivery_tag)
 
                         log('debug', '{}: Standing by...'.format(self._debug_route_name()))
 
@@ -281,7 +285,8 @@ class Consumer(threading.Thread):
                     if self._paused:
                         log('info', '{}: On STANDBY'.format(self._debug_route_name()))
 
-                        channel.basic_nack(delivery_tag = method_frame.delivery_tag)
+                        if not self._auto_acknowledge:
+                            channel.basic_nack(delivery_tag = method_frame.delivery_tag)
 
                         log('debug', '{}: Temporarily block itself for a moment'.format(self._debug_route_name()))
 
@@ -306,7 +311,8 @@ class Consumer(threading.Thread):
                     self.callback(message)
 
                     # Acknowledge the delivery after the work is done.
-                    channel.basic_ack(delivery_tag = method_frame.delivery_tag)
+                    if not self._auto_acknowledge:
+                        channel.basic_ack(delivery_tag = method_frame.delivery_tag)
                 except Exception as unexpected_error:
                     error_info = {
                         'type'      : type(unexpected_error).__name__,
@@ -337,7 +343,8 @@ class Consumer(threading.Thread):
                     channel.basic_publish(**republishing_options)
 
                     # Acknowledge the delivery when an error occurs to DEQUEUE the message.
-                    channel.basic_ack(delivery_tag = method_frame.delivery_tag)
+                    if not self._auto_acknowledge:
+                        channel.basic_ack(delivery_tag = method_frame.delivery_tag)
 
                     if self._on_error:
                         self._async_execute(self._on_error, unexpected_error)
