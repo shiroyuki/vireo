@@ -8,7 +8,7 @@ import uuid
 from pika            import BasicProperties
 from pika.exceptions import ConnectionClosed, ChannelClosed, IncompatibleProtocolError
 
-from ...helper import log
+from ...helper import log, debug_mode_enabled
 from ...model  import Message, RemoteSignal
 
 from .exception import NoConnectionError
@@ -199,8 +199,11 @@ class Consumer(threading.Thread):
                 time_sequence = [time.time()]
                 raw_message   = body.decode('utf8')
 
-                log('info', '{}: Processing {}...'.format(self._debug_route_name(), raw_message))
+                message_id = str(uuid.uuid4())
 
+                log('info', '{}: MESSAGE {}: Processing {}...'.format(self._debug_route_name(), message_id, raw_message))
+
+                # Process the message
                 try:
                     # This is inside the try-catch block to deal with malformed data.
                     decoded_message = json.loads(raw_message)
@@ -309,60 +312,45 @@ class Consumer(threading.Thread):
                     )
 
                     self.callback(message)
-
-                    # Acknowledge the delivery after the work is done.
-                    if not self._auto_acknowledge:
-                        channel.basic_ack(delivery_tag = method_frame.delivery_tag)
                 except Exception as unexpected_error:
-                    error_info = {
-                        'type'      : type(unexpected_error).__name__,
-                        'message'   : str(unexpected_error),
-                        'traceback' : traceback.format_exc(),
-                    }
-                    log('error', '{}: Exception raised while processing the message: {type}: {message}\n{traceback}'.format(
-                        self._debug_route_name(),
-                        **error_info,
-                    ))
+                    self._handle_error_during_consumption(message_id, raw_message, unexpected_error, traceback.format_exc())
 
-                    # Store the message that cause error in the recovery queue.
-                    republishing_options = {
-                        'exchange'    : '',
-                        'routing_key' : self._recovery_queue_name,
-                        'properties'  : BasicProperties(content_type = 'application/json'),
-                        'body'        : json.dumps(
-                                            {
-                                                'controller' : self._controller_id,
-                                                'error'      : error_info,
-                                                'message'    : raw_message,
-                                                'when'       : time.time(),
-                                            },
-                                            indent = 4
-                                        ),
-                    }
-
-                    channel.basic_publish(**republishing_options)
+                    log('error', '{}: MESSAGE {}: Error detected while processing the message'.format(self._debug_route_name(), message_id))
 
                     # Acknowledge the delivery when an error occurs to DEQUEUE the message.
                     if not self._auto_acknowledge:
                         channel.basic_ack(delivery_tag = method_frame.delivery_tag)
 
-                    if self._on_error:
-                        self._async_execute(self._on_error, unexpected_error)
+                    log('warning', '{}: MESSAGE {}: Recovered from the unexpected error'.format(self._debug_route_name(), message_id))
 
-                    log('warning', '{}: Recovered from the unexpected error'.format(self._debug_route_name()))
+                # Acknowledge the delivery after the work is done.
+                try:
+                    if not self._auto_acknowledge:
+                        channel.basic_ack(delivery_tag = method_frame.delivery_tag)
+                except Exception as unexpected_error:
+                    self._handle_error_during_consumption(message_id, raw_message, unexpected_error, traceback.format_exc())
+
+                    log('error', '{}: MESSAGE {}: Error detected while acknowledging the message delivery ({})'.format(self._debug_route_name(), message_id, method_frame.delivery_tag))
+
+                if self._stopped:
+                    log('warning', '{}: Consumer terminated'.format(self._debug_route_name()))
+
+                    return
 
                 log('debug', '{}: Ready (OK)'.format(self._debug_route_name()))
 
-            log('debug', '{}: Listening...'.format(self._debug_route_name()))
+            log('debug', '{}: Listening... (ACK: {})'.format(self._debug_route_name(), 'AUTO' if self._auto_acknowledge else 'MANUAL'))
 
-            if self._auto_acknowledge:
-                log('warning', '{}: Auto-acknowledgement is enabled.'.format(self._debug_route_name()))
-
-            channel.basic_consume(callback_wrapper, self._queue_name, no_ack=not self._auto_acknowledge)
+            channel.basic_consume(
+                callback_wrapper,
+                self._queue_name,
+                no_ack = self._auto_acknowledge, # No delivery acknowledgement needed
+            )
 
             # NOTE there is a bug in start_consuming that prevents stop_consuming from cleanly
             #      stopping message consumption. The following is a hack suggested in StackOverflow.
             # channel.start_consuming()
+
             try:
                 while channel._consumer_infos:
                     channel.connection.process_data_events(time_limit = 1)
@@ -379,13 +367,62 @@ class Consumer(threading.Thread):
 
             log('debug', 'Stopped listening to {}'.format(self._debug_route_name()))
 
+    def _handle_error_during_consumption(self, message_id, raw_message, error, execution_trace):
+        with active_connection(self.url, self._on_connect, self._on_disconnect) as channel:
+            error_info = {
+                'type'      : type(error).__name__,
+                'message'   : str(error),
+                'traceback' : execution_trace,
+            }
+
+            log('error', '{}: Unexpected error detected: {type}: {message}\n{traceback}'.format(
+                self._debug_route_name(),
+                **error_info,
+            ))
+
+            # Store the message that cause error in the recovery queue.
+            republishing_options = {
+                'exchange'    : '',
+                'routing_key' : self._recovery_queue_name,
+                'properties'  : BasicProperties(content_type = 'application/json'),
+                'body'        : json.dumps(
+                                    {
+                                        'controller' : self._controller_id,
+                                        'error'      : error_info,
+                                        'message'    : raw_message,
+                                        'when'       : time.time(),
+                                    },
+                                    indent = 4,
+                                    sort_keys = True,
+                                ),
+            }
+
+            channel.basic_publish(**republishing_options)
+
+            if self._on_error:
+                self._async_execute(self._on_error, error)
+
+            if isinstance(error, (ConnectionClosed, ChannelClosed)):
+                log('error', '{}: Connection Error: {type}: {message}\n{traceback}'.format(
+                    self._debug_route_name(),
+                    **error_info,
+                ))
+
+                raise NoConnectionError()
+
     def _debug_route_name(self):
-        result = 'ROUTE {}/{}/{}'.format(self._controller_id, self.route, self._consumer_id)
+        segments = [
+            'ROUTE {}'.format(self.route),
+            'CONTROLLER {}'.format(self._controller_id),
+        ]
 
-        if self._queue_name:
-            return '{} (QUEUE {})'.format(result, self._queue_name)
+        # if debug_mode_enabled:
+        #     segments.append('CONSUMER {}'.format(self._consumer_id))
 
-        return result
+        if self.route != self._queue_name:
+            segments.append('QUEUE {}'.format(self._queue_name))
+
+        return '/'.join(segments)
 
     def _declare_shared_queue(self, channel):
         queue_name = self._declare_queue(

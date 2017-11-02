@@ -1,14 +1,17 @@
 import logging
 
+debug_mode_enabled = True
+
 _logger      = None
 _log_handler = None
 
 
 def log(level, *args, **kwargs):
+    global debug_mode_enabled
     global _logger
 
     if not _logger:
-        prepare_logger(logging.ERROR)
+        prepare_logger(logging.DEBUG if debug_mode_enabled else logging.ERROR)
 
     getattr(_logger, level)(*args, **kwargs)
 
