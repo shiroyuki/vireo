@@ -1,6 +1,6 @@
 import logging
 
-debug_mode_enabled = True
+debug_mode_enabled = False
 
 _logger      = None
 _log_handler = None
