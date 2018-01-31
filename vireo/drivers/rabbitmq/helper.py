@@ -1,4 +1,5 @@
 import contextlib
+import traceback
 
 from pika            import BlockingConnection
 from pika.connection import URLParameters
@@ -19,8 +20,7 @@ def get_blocking_queue_connection(url):
 
 
 @contextlib.contextmanager
-def active_connection(url, on_connect, on_disconnect):
-    # log('debug', 'Connecting')
+def active_connection(url, on_connect, on_disconnect, on_error):
     log('debug', '[active_connection] New active connection to {}'.format(url))
 
     try:
@@ -29,35 +29,29 @@ def active_connection(url, on_connect, on_disconnect):
 
         if on_connect:
             on_connect()
-    except IncompatibleProtocolError:
-        if on_disconnect:
-            on_disconnect()
+    except IncompatibleProtocolError as e:
+        if on_error:
+            on_error(e, summary = summary)
 
-        raise NoConnectionError('Incompatible Protocol')
-    except ChannelClosed:
-        if on_disconnect:
-            on_disconnect()
-
-        raise NoConnectionError('Failed to communicate while opening an active channel')
-    except ConnectionClosed:
-        if on_disconnect:
-            on_disconnect()
-
-        raise NoConnectionError('Failed to connect while opening an active connection')
-
-    # log('debug', 'Connected and channel opened')
-    # log('debug', 'Yielding the opened channel')
+        raise NoConnectionError(summary)
+    except ChannelClosed as e:
+        __raise_no_connection_error(
+            'Failed to communicate while opening an active channel ({}: {})'.format(type(e).__name__, e),
+            on_disconnect,
+        )
+    except ConnectionClosed as e:
+        __raise_no_connection_error(
+            'Failed to connect while opening an active connection ({}: {})'.format(type(e).__name__, e),
+            on_disconnect,
+        )
 
     yield channel
-
-    # log('debug', 'Regained the opened channel')
-    # log('debug', 'Disconnecting')
 
     try:
         channel.close()
         connection.close()
 
-        # log('debug', 'Disconnected')
+        log('debug', '[active_connection] disconnected')
     except ChannelClosed as e:
         log('warning', '[active_connection] Unexpectedly closed the channel. ({})'.format(e))
 
@@ -66,3 +60,9 @@ def active_connection(url, on_connect, on_disconnect):
         log('warning', '[active_connection] Unexpectedly disconnected. ({})'.format(e))
 
         # bypassed if the connection is no longer available.
+
+def __raise_no_connection_error(summary, on_disconnect):
+    if on_disconnect:
+        on_disconnect(summary = summary)
+
+    raise NoConnectionError(summary)

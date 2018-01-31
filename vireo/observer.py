@@ -29,16 +29,19 @@ class Observer(Core):
         """ Observer Identifier """
         return self._identifier
 
-    def on(self, event_name, callback, resumable = False, simple_handling = True, options = None):
+    def on(self, event_name, callback, resumable = False, simple_handling = True, options = None,
+           delay_per_message = 0):
         """ Listen to an event with a callback function.
 
-            :param str event_name: the name of the event
-            :param callable callback: the callback callable
-            :param bool resumable: the flag to indicate whether the event consumption can be resumed (as the data stream will never be deleted).
-            :param bool simple_handling: the flag to instruct the code to return the content of the message, instead of returning the whole :class:`vireo.model.Message` object.
+            :param str event_name:          the name of the event
+            :param callable callback:       the callback callable
+            :param bool resumable:          the flag to indicate whether the event consumption can be resumed (as the data stream will never be deleted).
+            :param bool simple_handling:    the flag to instruct the code to return the content of the message, instead of returning the whole :class:`vireo.model.Message` object.
+            :param dict options:            the extra options to the method ``observe`` of the driver
+            :param float delay_per_message: the delay per message (any negative numbers are regarded as zero, zero or any equivalent value is regarded as "no delay")
 
-            The callback is a callable object, e.g., function, class method, lambda object, which
-            takes only one parameter which is a JSON-decoded object.
+            The callback is a callable object, e.g., function, class method and lambda object,
+            which takes only one parameter which is a JSON-decoded object.
 
             For example,
 
@@ -58,22 +61,25 @@ class Observer(Core):
                     ...
         """
         internal_observer = self._driver.observe(event_name, callback, resumable, False, options,
-                                                 simple_handling = simple_handling,
-                                                 controller_id = self.id)
+                                                 simple_handling = simple_handling, controller_id = self.id,
+                                                 delay_per_message = delay_per_message)
 
         self._register_event_handler(self._normal_event_to_observer_map, event_name, internal_observer)
 
         return internal_observer
 
-    def on_broadcast(self, event_name, callback, simple_handling = True, options = None):
+    def on_broadcast(self, event_name, callback, simple_handling = True, options = None,
+                     delay_per_message = 0):
         """ Listen to an distributed event with a callback function.
 
-            :param str event_name: the name of the event
-            :param callable callback: the callback callable
-            :param bool simple_handling: the flag to instruct the code to return the content of the message, instead of returning the whole :class:`vireo.model.Message` object.
+            :param str event_name:          the name of the event
+            :param callable callback:       the callback callable
+            :param bool simple_handling:    the flag to instruct the code to return the content of the message, instead of returning the whole :class:`vireo.model.Message` object.
+            :param dict options:            the extra options to the method ``observe`` of the driver
+            :param float delay_per_message: the delay per message (any negative numbers are regarded as zero, zero or any equivalent value is regarded as "no delay")
 
-            The callback is a callable object, e.g., function, class method, lambda object, which
-            takes only one parameter which is a JSON-decoded object.
+            The callback is a callable object, e.g., function, class method and lambda object,
+            which takes only one parameter which is a JSON-decoded object.
 
             For example,
 
@@ -93,8 +99,8 @@ class Observer(Core):
                     ...
         """
         internal_observer = self._driver.observe(event_name, callback, False, True, options,
-                                                 simple_handling = simple_handling,
-                                                 controller_id = self.id)
+                                                 simple_handling = simple_handling, controller_id = self.id,
+                                                 delay_per_message = delay_per_message)
 
         self._register_event_handler(self._broadcast_event_to_observer_map, event_name, internal_observer)
 

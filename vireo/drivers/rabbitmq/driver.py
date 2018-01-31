@@ -45,22 +45,30 @@ class Driver(object):
 
         .. code-block:: Python
 
-            def on_connect(consumer = None):
+            def on_connect(consumer = None, controller_id = None, route = None, queue_name = None, summary = None):
                 ...
 
         Here is an example for ``on_disconnect``.
 
         .. code-block:: Python
 
-            def on_disconnect(consumer = None):
+            def on_disconnect(consumer = None, controller_id = None, route = None, queue_name = None, summary = None):
                 ...
 
         Here is an example for ``on_error``.
 
         .. code-block:: Python
 
-            def on_error(exception, consumer = None):
+            def on_error(exception, consumer = None, controller_id = None, route = None, queue_name = None, summary = None):
                 ...
+
+        Where:
+        * ``exception`` is the (raised) exception object.
+        * ``consumer`` is the associate consumer object (optional).
+        * ``controller_id`` is the associate ID (optional).
+        * ``route`` is the affected route (optional).
+        * ``queue_name`` is the affected queue name (optional).
+        * ``summary`` is the summary of the event (optional).
     """
     def __init__(self, url, consumer_classes = None, unlimited_retries = False, on_connect = None,
                  on_disconnect = None, on_error = None, default_publishing_options : dict = None,
@@ -193,7 +201,7 @@ class Driver(object):
 
         options = fill_in_the_blank(options or {}, default_parameters)
 
-        with active_connection(self.url, self._on_connect, self._on_disconnect) as channel:
+        with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
             try:
                 log('debug', 'Publishing: route={} message={} options={}'.format(route, message, options))
                 channel.basic_publish(**options)
@@ -224,7 +232,7 @@ class Driver(object):
 
         fill_in_the_blank(exchange_options, {'exchange': exchange_name, 'exchange_type': 'direct'})
 
-        with active_connection(self.url, self._on_connect, self._on_disconnect) as channel:
+        with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
             try:
                 channel.exchange_declare(**exchange_options)
 
@@ -264,7 +272,7 @@ class Driver(object):
 
         exchange_name = options['exchange']
 
-        with active_connection(self.url, self._on_connect, self._on_disconnect) as channel:
+        with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
             try:
                 log('debug', 'Declaring a shared topic exchange')
 
@@ -290,7 +298,7 @@ class Driver(object):
                 raise NoConnectionError('Unexpectedly losed the connection while broadcasting an event')
 
     def observe(self, route, callback, resumable, distributed, options = None,
-                simple_handling = True, controller_id = None):
+                simple_handling = True, controller_id = None, delay_per_message = 0):
         consumer_class = Consumer
 
         for overriding_consumer_class in self._consumer_classes:
@@ -327,6 +335,7 @@ class Driver(object):
             exchange_options  = exchange_options,
             auto_acknowledge  = self._auto_acknowledge,
             send_sigterm_on_disconnect = self._send_sigterm_on_disconnect,
+            delay_per_message = delay_per_message,
         )
 
         consumer = consumer_class(**parameters)

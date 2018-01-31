@@ -1,4 +1,5 @@
 import json
+import math
 import sys
 import threading
 import traceback
@@ -14,8 +15,9 @@ from ...model  import Message, RemoteSignal
 from .exception import NoConnectionError
 from .helper    import active_connection, fill_in_the_blank, SHARED_DIRECT_EXCHANGE_NAME, SHARED_TOPIC_EXCHANGE_NAME, SHARED_SIGNAL_CONNECTION_LOSS
 
-MAX_RETRY_COUNT = 120
-PING_MESSAGE      = 'ping'
+IMMEDIATE_RETRY_LIMIT = 10
+MAX_RETRY_COUNT = 60
+PING_MESSAGE    = 'ping'
 
 
 class Consumer(threading.Thread):
@@ -35,6 +37,13 @@ class Consumer(threading.Thread):
         :param callable on_connect:        a callback function when the message consumption begins.
         :param callable on_disconnect:     a callback function when the message consumption is interrupted due to unexpected disconnection.
         :param callable on_error:          a callback function when the message consumption is interrupted due to exception raised from the main callback function.
+        :param str controller_id:          the associated controller ID
+        :param dict exchange_options:      the additional options for exchange
+        :param bool auto_acknowledge:      the flag to determine whether the consumer should auto-acknowledge any delivery (default: ``False``)
+        :param bool send_sigterm_on_disconnect: the flag to force the consumer to terminate the process cleanly on disconnection (default: ``True``)
+        :param float delay_per_message:    the delay per message (any negative numbers are regarded as zero, zero or any equivalent value is regarded as "no delay")
+        :param int max_retries:            the maximum total retries the consumer can have
+        :param int immediate_retry_limit:  the maximum immediate retries the consumer can have before it uses the exponential delay
 
         Here is an example for ``on_connect``.
 
@@ -60,7 +69,8 @@ class Consumer(threading.Thread):
     def __init__(self, url, route, callback, shared_stream, resumable, distributed, queue_options,
                  simple_handling, unlimited_retries = False, on_connect = None, on_disconnect = None,
                  on_error = None, controller_id = None, exchange_options = None, auto_acknowledge = False,
-                 send_sigterm_on_disconnect = True):
+                 send_sigterm_on_disconnect = True, delay_per_message = 0, max_retries = MAX_RETRY_COUNT,
+                 immediate_retry_limit = IMMEDIATE_RETRY_LIMIT):
         super().__init__(daemon = True)
 
         queue_options    = queue_options    if queue_options    and isinstance(queue_options,    dict) else {}
@@ -82,8 +92,20 @@ class Consumer(threading.Thread):
         self._stopped         = False
         self._controller_id   = controller_id
         self._consumer_id     = str(uuid.uuid4())
+        self._max_retries     = max_retries
+        self._immediate_retry_limit = immediate_retry_limit if immediate_retry_limit < max_retries else max_retries
 
         self._send_sigterm_on_disconnect = send_sigterm_on_disconnect
+
+        self._delay_per_message = (
+            delay_per_message
+            if (
+                delay_per_message
+                and isinstance(delay_per_message, (int, float))
+                and delay_per_message > 0
+            )
+            else 0
+        )
 
         self._auto_acknowledge  = auto_acknowledge
         self._unlimited_retries = unlimited_retries
@@ -122,22 +144,42 @@ class Consumer(threading.Thread):
             except NoConnectionError as e:
                 self._retry_count += 1
 
-                if self._on_disconnect:
-                    self._async_execute(self._on_disconnect)
+                remaining_retries   = self._max_retries - self._retry_count
+                can_immediate_retry = self._retry_count <= self._immediate_retry_limit
+                wait_time           = 0 if can_immediate_retry else math.pow(2, self._retry_count - self._immediate_retry_limit - 1)
 
-                    log('error', '{}: Passed the error information occurred to the error handler'.format(self._debug_route_name()))
+                # Notify the unexpected disconnection
+                log('warning', '{}: Unexpected disconnection detected due to {} (retry #{})'.format(self._debug_route_name(), self._retry_count, e))
 
-                if self._retry_count < MAX_RETRY_COUNT:
-                    log('info', '{}: Will re-listen to the queue in 1 second ({} attempt(s) left)'.format(self._debug_route_name(), MAX_RETRY_COUNT - self._retry_count))
-                    time.sleep(1)
-                    log('warning', 'Reconnecting to listen to {}'.format(self._debug_route_name()))
+                # Attempt to retry and skip the rest of error handling routine.
+                if remaining_retries >= 0:
+                    log(
+                        'info',
+                        '{}: Will reconnect to the queue in {}s ({} attempt(s) left)'.format(
+                            self._debug_route_name(),
+                            wait_time,
+                            remaining_retries,
+                        )
+                    )
+
+                    # Give a pause between each retry if the code already retries immediate too often.
+                    if wait_time:
+                        time.sleep(1)
+
+                    log('warning', '{}: Reconnecting...'.format(self._debug_route_name()))
 
                     continue
+                elif self._on_disconnect:
+                    log('warning', '{}: {} the maximum retries (retry #{}/{})'.format(self._debug_route_name(), 'Reached' if self._retry_count == self._max_retries else 'Exceeded', self._retry_count, self._max_retries))
+
+                    self._async_execute(self._on_disconnect)
+
+                    log('warning', '{}: Passed the error information occurred to the error handler'.format(self._debug_route_name()))
 
                 if self._unlimited_retries:
                     log('info', '{}: Will re-listen to the queue in 5 second (unlimited retries)'.format(self._debug_route_name()))
                     time.sleep(5)
-                    log('warning', 'Reconnecting to listen to {}'.format(self._debug_route_name()))
+                    log('warning', '{}: Reconnecting...'.format(self._debug_route_name()))
 
                     continue
 
@@ -179,15 +221,17 @@ class Consumer(threading.Thread):
         if self._channel:
             self._channel.stop_consuming()
 
-    def _async_execute(self, callable_method, *args):
+    def _async_execute(self, callable_method, *args, **kwargs):
         params = [*args]
         params.append(self)
 
-        async_callback = threading.Thread(target = callable_method, args = params, daemon = True)
+        kw_params = dict(controller_id = self._controller_id, route = self.route, queue_name = self._queue_name, **kwargs)
+
+        async_callback = threading.Thread(target = callable_method, args = params, kwargs = kw_params, daemon = True)
         async_callback.start()
 
     def _listen(self):
-        with active_connection(self.url, self._on_connect, self._on_disconnect) as channel:
+        with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
             self._channel = channel
 
             self._queue_name = self._declare_topic_queue(channel) if self.distributed else self._declare_shared_queue(channel)
@@ -337,6 +381,13 @@ class Consumer(threading.Thread):
 
                     return
 
+                if self._delay_per_message:
+                    log('debug', '{}: Pausing for {:.3f}s (PAUSED)'.format(self._debug_route_name(), self._delay_per_message))
+
+                    time.sleep(self._delay_per_message)
+
+                    log('debug', '{}: Back to action (RESUMED)'.format(self._debug_route_name()))
+
                 log('debug', '{}: Ready (OK)'.format(self._debug_route_name()))
 
             log('debug', '{}: Listening... (ACK: {})'.format(self._debug_route_name(), 'AUTO' if self._auto_acknowledge else 'MANUAL'))
@@ -368,7 +419,7 @@ class Consumer(threading.Thread):
             log('debug', 'Stopped listening to {}'.format(self._debug_route_name()))
 
     def _handle_error_during_consumption(self, message_id, raw_message, error, execution_trace):
-        with active_connection(self.url, self._on_connect, self._on_disconnect) as channel:
+        with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
             error_info = {
                 'type'      : type(error).__name__,
                 'message'   : str(error),
