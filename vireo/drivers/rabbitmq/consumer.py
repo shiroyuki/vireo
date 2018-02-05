@@ -149,7 +149,7 @@ class Consumer(threading.Thread):
                 wait_time           = 0 if can_immediate_retry else math.pow(2, self._retry_count - self._immediate_retry_limit - 1)
 
                 # Notify the unexpected disconnection
-                log('warning', '{}: Unexpected disconnection detected due to {} (retry #{})'.format(self._debug_route_name(), self._retry_count, e))
+                log('warning', '{}: Unexpected disconnection detected due to {} (retry #{})'.format(self._debug_route_name(), e, self._retry_count))
 
                 # Attempt to retry and skip the rest of error handling routine.
                 if remaining_retries >= 0:

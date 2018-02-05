@@ -185,12 +185,13 @@ class Driver(object):
         if connection_losed:
             raise NoConnectionError('Unexpectedly losed the connection during message consumption')
 
-    def publish(self, route, message, options = None):
+    def publish(self, route, message, options = None, can_retry = True):
         """ Synchronously publish a message
 
             :param str route:   the route
             :param str message: the message
             :param dict options: additional options for basic_publish
+            :param bool can_retry: the flag to allow auto-retry on connection failure
         """
         default_parameters = self._generate_default_publish_options(
             self._default_publishing_options,
@@ -201,12 +202,26 @@ class Driver(object):
 
         options = fill_in_the_blank(options or {}, default_parameters)
 
+        self._do_publish(route, message, options, can_retry)
+
+    def _do_publish(self, route, message, options, can_retry):
         with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
             try:
                 log('debug', 'Publishing: route={} message={} options={}'.format(route, message, options))
                 channel.basic_publish(**options)
                 log('debug', 'Published: route={} message={} options={}'.format(route, message, options))
             except ConnectionClosed:
+                if can_retry:
+                    log('warn', 'RETRY Publishing: route={} message={} options={}'.format(route, message, options))
+
+                    self._do_publish(route, message, options, can_retry = False)
+
+                    return
+
+                if self._on_disconnect:
+                    async_callback = threading.Thread(target = self._on_disconnect, daemon = True)
+                    async_callback.start()
+
                 raise NoConnectionError('Unexpectedly losed the connection while publishing a message')
 
     def declare_queue_with_delegation(self, origin_queue_name, ttl, fallback_queue_name = None,
@@ -251,7 +266,7 @@ class Driver(object):
 
                 raise NoConnectionError('Unexpectedly losed the connection while orchestrating queues and exchange for delegation')
 
-    def broadcast(self, route, message, options = None):
+    def broadcast(self, route, message, options = None, can_retry = True):
         """ Broadcast a message to a particular route.
 
             :param str route:    the route
@@ -272,6 +287,9 @@ class Driver(object):
 
         exchange_name = options['exchange']
 
+        self._do_broadcast(exchange_name, route, message, options, can_retry)
+
+    def _do_broadcast(self, exchange_name, route, message, options, can_retry):
         with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
             try:
                 log('debug', 'Declaring a shared topic exchange')
@@ -291,6 +309,13 @@ class Driver(object):
                 log('debug', 'Broadcasted: route={} message={} options={}'.format(route, message, options))
 
             except ConnectionClosed:
+                if can_retry:
+                    log('warn', 'RETRY Broadcasting: route={} message={} options={}'.format(route, message, options))
+
+                    self._do_broadcast(exchange_name, route, message, options, can_retry = False)
+
+                    return
+
                 if self._on_disconnect:
                     async_callback = threading.Thread(target = self._on_disconnect, daemon = True)
                     async_callback.start()
