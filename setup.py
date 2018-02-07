@@ -2,7 +2,7 @@ from distutils.core import setup
 
 setup(
     name         = 'vireo',
-    version      = '0.13.2',
+    version      = '0.13.3',
     description  = 'A library and framework for event-driven application development',
     license      = 'MIT',
     author       = 'Juti Noppornpitak',
@@ -23,5 +23,8 @@ setup(
         'Programming Language :: Python :: 3',
         'Topic :: Software Development :: Libraries'
     ],
-    install_requires = ['pika']
+    install_requires = [
+        'amqp',
+        'pika==0.10.0', # 0.11.0 has issue with SSL connection
+    ]
 )

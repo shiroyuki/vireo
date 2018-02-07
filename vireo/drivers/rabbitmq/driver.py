@@ -185,13 +185,13 @@ class Driver(object):
         if connection_losed:
             raise NoConnectionError('Unexpectedly losed the connection during message consumption')
 
-    def publish(self, route, message, options = None, can_retry = True):
+    def publish(self, route, message, options = None, allowed_retry_count = 5):
         """ Synchronously publish a message
 
             :param str route:   the route
             :param str message: the message
             :param dict options: additional options for basic_publish
-            :param bool can_retry: the flag to allow auto-retry on connection failure
+            :param bool allowed_retry_count: the flag to allow auto-retry on connection failure
         """
         default_parameters = self._generate_default_publish_options(
             self._default_publishing_options,
@@ -202,19 +202,19 @@ class Driver(object):
 
         options = fill_in_the_blank(options or {}, default_parameters)
 
-        self._do_publish(route, message, options, can_retry)
+        self._do_publish(route, message, options, allowed_retry_count)
 
-    def _do_publish(self, route, message, options, can_retry):
-        with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
+    def _do_publish(self, route, message, options, allowed_retry_count):
+        with active_connection(self.url, self._on_connect if not allowed_retry_count else None, self._on_disconnect if not allowed_retry_count else None, self._on_error if not allowed_retry_count else None) as channel:
             try:
                 log('debug', 'Publishing: route={} message={} options={}'.format(route, message, options))
                 channel.basic_publish(**options)
                 log('debug', 'Published: route={} message={} options={}'.format(route, message, options))
             except ConnectionClosed:
-                if can_retry:
+                if allowed_retry_count:
                     log('warn', 'RETRY Publishing: route={} message={} options={}'.format(route, message, options))
 
-                    self._do_publish(route, message, options, can_retry = False)
+                    self._do_publish(route, message, options, allowed_retry_count = allowed_retry_count - 1)
 
                     return
 
@@ -266,7 +266,7 @@ class Driver(object):
 
                 raise NoConnectionError('Unexpectedly losed the connection while orchestrating queues and exchange for delegation')
 
-    def broadcast(self, route, message, options = None, can_retry = True):
+    def broadcast(self, route, message, options = None, allowed_retry_count = 5):
         """ Broadcast a message to a particular route.
 
             :param str route:    the route
@@ -287,10 +287,10 @@ class Driver(object):
 
         exchange_name = options['exchange']
 
-        self._do_broadcast(exchange_name, route, message, options, can_retry)
+        self._do_broadcast(exchange_name, route, message, options, allowed_retry_count)
 
-    def _do_broadcast(self, exchange_name, route, message, options, can_retry):
-        with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
+    def _do_broadcast(self, exchange_name, route, message, options, allowed_retry_count):
+        with active_connection(self.url, self._on_connect if not allowed_retry_count else None, self._on_disconnect if not allowed_retry_count else None, self._on_error if not allowed_retry_count else None) as channel:
             try:
                 log('debug', 'Declaring a shared topic exchange')
 
@@ -309,10 +309,10 @@ class Driver(object):
                 log('debug', 'Broadcasted: route={} message={} options={}'.format(route, message, options))
 
             except ConnectionClosed:
-                if can_retry:
+                if allowed_retry_count:
                     log('warn', 'RETRY Broadcasting: route={} message={} options={}'.format(route, message, options))
 
-                    self._do_broadcast(exchange_name, route, message, options, can_retry = False)
+                    self._do_broadcast(exchange_name, route, message, options, allowed_retry_count = allowed_retry_count - 1)
 
                     return
 
