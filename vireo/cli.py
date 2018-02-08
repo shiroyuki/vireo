@@ -3,11 +3,11 @@ import logging
 
 from gallium.interface import ICommand
 
-from .core             import Core
-from .drivers.rabbitmq import Driver
-from .model            import RemoteSignal
-from .observer         import Observer
-from .helper           import prepare_logger
+from .core         import Core
+from .drivers.amqp import Driver
+from .model        import RemoteSignal
+from .observer     import Observer
+from .helper       import prepare_logger
 
 
 class EventEmitter(ICommand):
@@ -56,7 +56,12 @@ class EventEmitter(ICommand):
         driver  = Driver(args.bind_url)
         service = Core(driver)
 
-        service.emit(args.event_name, json.loads(args.event_data) if args.event_data else None, options)
+        service.emit(
+            args.event_name,
+            json.loads(args.event_data) if args.event_data else None,
+            options,
+            error_suppressed = False,
+        )
 
 
 class ObserverRemoteControl(ICommand):
@@ -110,19 +115,23 @@ class ObserverRemoteControl(ICommand):
 
         if args.broadcast:
             service.broadcast(
-                args.event_name, {
+                args.event_name,
+                {
                     'remote_signal': getattr(RemoteSignal, remote_command),
                     'controller_id': args.remote_id,
-                }
+                },
+                error_suppressed = False,
             )
 
             return
 
         service.emit(
-            args.event_name, {
+            args.event_name,
+            {
                 'remote_signal': getattr(RemoteSignal, remote_command),
                 'controller_id': args.remote_id,
-            }
+            },
+            error_suppressed = False,
         )
 
 
@@ -161,4 +170,8 @@ class EventBroadcaster(ICommand):
         driver  = Driver(args.bind_url)
         service = Core(driver)
 
-        service.broadcast(args.event_name, json.loads(args.event_data) if args.event_data else None)
+        service.broadcast(
+            args.event_name,
+            json.loads(args.event_data) if args.event_data else None,
+            error_suppressed = False,
+        )

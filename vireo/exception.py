@@ -4,3 +4,7 @@ class NoConnectionError(RuntimeError):
 
 class ObservationError(RuntimeError):
     """ Observation error """
+
+
+class InvalidURLError(RuntimeError):
+    """ Invalid URL Error """
