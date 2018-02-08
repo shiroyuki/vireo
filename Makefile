@@ -15,8 +15,9 @@ install:
 	@$(PIP) install -IU --force-reinstall dist/*
 
 # Do not use bdist_wheel if there is a command to install.
-release:
-	@$(PY) setup.py sdist upload
+release: package
+	# @$(PY) setup.py sdist upload
+	twine upload dist/*
 
 # Build the test image.
 docker-image:
