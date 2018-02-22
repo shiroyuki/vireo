@@ -1,12 +1,39 @@
 import json
 import logging
 import pprint
+import sys
+import time
 
 from gallium.interface import ICommand
 
 from .drivers.rabbitmq import Driver
 from .observer         import Core, Observer, SYNC_START
 from .helper           import prepare_logger
+
+logger = prepare_logger(logging.DEBUG if '-d' in sys.argv else logging.INFO)
+
+
+def handle_driver_event(level, label, c, summary = None):
+    if not c or not hasattr(c, 'route') or not hasattr(c, 'queue_name'):
+        getattr(logger, level.lower())(label)
+
+        return
+
+    getattr(logger, level.lower())('{} ({}): {}'.format(
+        c.route,
+        c.queue_name,
+        label,
+    ))
+
+
+def on_connect(consumer = None, controller_id = None, route = None, queue_name = None, summary = None):
+    handle_driver_event('info',  '<-------> CONNECTED', consumer)
+
+def on_disconnect(consumer = None, controller_id = None, route = None, queue_name = None, summary = None):
+    handle_driver_event('error', '---/ /--- DISCONNECTED', consumer)
+
+def make_error_handler(exception, consumer = None, controller_id = None, route = None, queue_name = None, summary = None):
+    handle_driver_event('error', '<--(!)--> ERROR', consumer)
 
 
 class SampleObserveWithDefaultOptions(ICommand):
@@ -28,26 +55,12 @@ class SampleObserveWithDefaultOptions(ICommand):
         )
 
     def execute(self, args):
-        logger = prepare_logger(logging.DEBUG if args.debug else logging.INFO)
-
-        def handle_driver_event(level, label, c):
-            if not c or not hasattr(c, 'route') or not hasattr(c, 'queue_name'):
-                getattr(logger, level.lower())(label)
-
-                return
-
-            getattr(logger, level.lower())('{} ({}): {}'.format(
-                c.route,
-                c.queue_name,
-                label,
-            ))
-
         driver = Driver(
             args.bind_url,
             unlimited_retries = True,
-            on_connect        = lambda c = None:           handle_driver_event('info',  '--><-- CONNECTED',    c),
-            on_disconnect     = lambda c = None:           handle_driver_event('error', '-x--x- DISCONNECTED', c),
-            on_error          = lambda c = None, e = None: handle_driver_event('error', '-->-x- ERROR',        c),
+            on_connect        = on_connect,
+            on_disconnect     = on_disconnect,
+            on_error          = make_error_handler,
         )
 
         service = Observer(driver)
@@ -146,26 +159,12 @@ class SampleObserveWithCustomOptions(ICommand):
         )
 
     def execute(self, args):
-        logger = prepare_logger(logging.DEBUG if args.debug else logging.INFO)
-
-        def handle_driver_event(level, label, c):
-            if not c or not hasattr(c, 'route') or not hasattr(c, 'queue_name'):
-                getattr(logger, level.lower())(label)
-
-                return
-
-            getattr(logger, level.lower())('{} ({}): {}'.format(
-                c.route,
-                c.queue_name,
-                label,
-            ))
-
         driver = Driver(
             args.bind_url,
             unlimited_retries = True,
-            on_connect        = lambda c = None:           handle_driver_event('info',  '--><-- CONNECTED',    c),
-            on_disconnect     = lambda c = None:           handle_driver_event('error', '-x--x- DISCONNECTED', c),
-            on_error          = lambda c = None, e = None: handle_driver_event('error', '-->-x- ERROR',        c),
+            on_connect        = on_connect,
+            on_disconnect     = on_disconnect,
+            on_error          = make_error_handler,
             default_consuming_shared_queue_options = {
                 'exchange': {
                     'name': 'vireo_sample_custom_default_exchange',
@@ -237,3 +236,49 @@ class SamplePublishWithCustomOptions(ICommand):
         service = Core(driver)
 
         service.emit(args.event_name, json.loads(args.event_data) if args.event_data else None)
+
+
+class SampleObserveWithOneQueue(ICommand):
+    """ Run the sample observer with default options """
+    def identifier(self):
+        return 'sample.observe.single'
+
+    def define(self, parser):
+        parser.add_argument(
+            '--debug',
+            '-d',
+            action = 'store_true'
+        )
+
+        parser.add_argument(
+            '--bind-url',
+            '-b',
+            default='amqp://guest:guest@127.0.0.1:5672/%2F'
+        )
+
+    def execute(self, args):
+        driver = Driver(
+            args.bind_url,
+            unlimited_retries = False,
+            on_connect        = on_connect,
+            on_disconnect     = on_disconnect,
+            on_error          = make_error_handler,
+        )
+
+        def handler(data):
+            print('[SAMPLE] Begin')
+
+            print('[SAMPLE] Received: {}'.format(pprint.pformat(data, indent = 2)))
+
+            if isinstance(data, dict) and 'sleep' in data:
+                print('[SAMPLE] Sleeping')
+
+                time.sleep(data.get('sleep'))
+
+                print('[SAMPLE] Resumed')
+
+            print('[SAMPLE] End')
+
+        service = Observer(driver)
+        service.on('vireo.sample.single', handler, resumable = True, max_retries = 30)
+        service.join(SYNC_START)

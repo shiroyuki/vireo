@@ -205,7 +205,7 @@ class Driver(object):
         self._do_publish(route, message, options, allowed_retry_count)
 
     def _do_publish(self, route, message, options, allowed_retry_count):
-        with active_connection(self.url, self._on_connect if not allowed_retry_count else None, self._on_disconnect if not allowed_retry_count else None, self._on_error if not allowed_retry_count else None) as channel:
+        with active_connection(self.url, self._on_connect if not allowed_retry_count else None, self._on_disconnect if not allowed_retry_count else None) as channel:
             try:
                 log('debug', 'Publishing: route={} message={} options={}'.format(route, message, options))
                 channel.basic_publish(**options)
@@ -247,7 +247,7 @@ class Driver(object):
 
         fill_in_the_blank(exchange_options, {'exchange': exchange_name, 'exchange_type': 'direct'})
 
-        with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
+        with active_connection(self.url, self._on_connect, self._on_disconnect) as channel:
             try:
                 channel.exchange_declare(**exchange_options)
 
@@ -290,7 +290,7 @@ class Driver(object):
         self._do_broadcast(exchange_name, route, message, options, allowed_retry_count)
 
     def _do_broadcast(self, exchange_name, route, message, options, allowed_retry_count):
-        with active_connection(self.url, self._on_connect if not allowed_retry_count else None, self._on_disconnect if not allowed_retry_count else None, self._on_error if not allowed_retry_count else None) as channel:
+        with active_connection(self.url, self._on_connect if not allowed_retry_count else None, self._on_disconnect if not allowed_retry_count else None) as channel:
             try:
                 log('debug', 'Declaring a shared topic exchange')
 
@@ -323,7 +323,8 @@ class Driver(object):
                 raise NoConnectionError('Unexpectedly losed the connection while broadcasting an event')
 
     def observe(self, route, callback, resumable, distributed, options = None,
-                simple_handling = True, controller_id = None, delay_per_message = 0):
+                simple_handling = True, controller_id = None, delay_per_message = 0,
+                max_retries = None, immediate_retry_limit = None, max_retry_timeout = None):
         consumer_class = Consumer
 
         for overriding_consumer_class in self._consumer_classes:
@@ -344,23 +345,26 @@ class Driver(object):
         exchange_options = fill_in_the_blank(given_options.get('exchange', {}), default_options.get('exchange', {}))
 
         parameters = dict(
-            url               = self.url,
-            route             = route,
-            callback          = callback,
-            shared_stream     = self._shared_stream,
-            resumable         = resumable,
-            distributed       = distributed,
-            queue_options     = queue_options,
-            simple_handling   = simple_handling,
-            unlimited_retries = self._unlimited_retries,
-            on_connect        = self._on_connect,
-            on_disconnect     = self._on_disconnect,
-            on_error          = self._on_error,
-            controller_id     = controller_id,
-            exchange_options  = exchange_options,
-            auto_acknowledge  = self._auto_acknowledge,
+            url                        = self.url,
+            route                      = route,
+            callback                   = callback,
+            shared_stream              = self._shared_stream,
+            resumable                  = resumable,
+            distributed                = distributed,
+            queue_options              = queue_options,
+            simple_handling            = simple_handling,
+            unlimited_retries          = self._unlimited_retries,
+            on_connect                 = self._on_connect,
+            on_disconnect              = self._on_disconnect,
+            on_error                   = self._on_error,
+            controller_id              = controller_id,
+            exchange_options           = exchange_options,
+            auto_acknowledge           = self._auto_acknowledge,
             send_sigterm_on_disconnect = self._send_sigterm_on_disconnect,
-            delay_per_message = delay_per_message,
+            delay_per_message          = delay_per_message,
+            max_retries                = max_retries,
+            immediate_retry_limit      = immediate_retry_limit,
+            max_retry_timeout          = max_retry_timeout,
         )
 
         consumer = consumer_class(**parameters)

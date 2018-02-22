@@ -1,4 +1,5 @@
 import contextlib
+import re
 import traceback
 
 from pika            import BlockingConnection
@@ -12,6 +13,8 @@ SHARED_SIGNAL_CONNECTION_LOSS = 1
 SHARED_DIRECT_EXCHANGE_NAME   = 'vireo_default_direct_r0'
 SHARED_TOPIC_EXCHANGE_NAME    = 'vireo_default_topic_r0'
 
+re_remove_credential = re.compile('//[^:]+:[^@]+@')
+
 
 def get_blocking_queue_connection(url):
     init_params = URLParameters(url)
@@ -20,8 +23,8 @@ def get_blocking_queue_connection(url):
 
 
 @contextlib.contextmanager
-def active_connection(url, on_connect, on_disconnect, on_error):
-    log('debug', '[active_connection] New active connection to {}'.format(url))
+def active_connection(url, on_connect, on_disconnect, summary = None):
+    log('debug', '[active_connection] New active connection to {}'.format(re_remove_credential.sub('//', url)))
 
     try:
         connection = get_blocking_queue_connection(url)
@@ -30,18 +33,23 @@ def active_connection(url, on_connect, on_disconnect, on_error):
         if on_connect:
             on_connect()
     except IncompatibleProtocolError as e:
-        if on_error:
-            on_error(e, summary = summary)
-
-        raise NoConnectionError(summary)
+        __raise_no_connection_error(
+            'Unreachable Host ({}: {})'.format(type(e).__name__, e),
+            on_disconnect,
+        )
     except ChannelClosed as e:
         __raise_no_connection_error(
-            'Failed to communicate while opening an active channel ({}: {})'.format(type(e).__name__, e),
+            'Channel suddently closed before using ({}: {})'.format(type(e).__name__, e),
             on_disconnect,
         )
     except ConnectionClosed as e:
         __raise_no_connection_error(
-            'Failed to connect while opening an active connection ({}: {})'.format(type(e).__name__, e),
+            'Connection suddently closed before using ({}: {})'.format(type(e).__name__, e),
+            on_disconnect,
+        )
+    except Exception as e:
+        __raise_no_connection_error(
+            'Unknown Error ({}: {})'.format(type(e).__name__, e),
             on_disconnect,
         )
 

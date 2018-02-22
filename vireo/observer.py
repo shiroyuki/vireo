@@ -29,8 +29,9 @@ class Observer(Core):
         """ Observer Identifier """
         return self._identifier
 
-    def on(self, event_name, callback, resumable = False, simple_handling = True, options = None,
-           delay_per_message = 0):
+    def on(self, event_name, callback, resumable = False, simple_handling = True,
+           options = None, delay_per_message = 0, max_retries = None,
+           immediate_retry_limit = None, max_retry_timeout = None):
         """ Listen to an event with a callback function.
 
             :param str event_name:          the name of the event
@@ -39,6 +40,9 @@ class Observer(Core):
             :param bool simple_handling:    the flag to instruct the code to return the content of the message, instead of returning the whole :class:`vireo.model.Message` object.
             :param dict options:            the extra options to the method ``observe`` of the driver
             :param float delay_per_message: the delay per message (any negative numbers are regarded as zero, zero or any equivalent value is regarded as "no delay")
+            :param int max_retries:         maximum allowed retry count
+            :param int immediate_retry_limit: allowed immediate retry count
+            :param int max_retry_timeout:   maximum retry timeout
 
             The callback is a callable object, e.g., function, class method and lambda object,
             which takes only one parameter which is a JSON-decoded object.
@@ -60,16 +64,24 @@ class Observer(Core):
                 def error_handler(consumer, exception):
                     ...
         """
-        internal_observer = self._driver.observe(event_name, callback, resumable, False, options,
-                                                 simple_handling = simple_handling, controller_id = self.id,
-                                                 delay_per_message = delay_per_message)
+        extra_options = dict(
+            simple_handling       = simple_handling,
+            controller_id         = self.id,
+            delay_per_message     = delay_per_message,
+            max_retries           = max_retries,
+            immediate_retry_limit = immediate_retry_limit,
+            max_retry_timeout     = max_retry_timeout,
+        )
+
+        internal_observer = self._driver.observe(event_name, callback, resumable, False, options, **extra_options)
 
         self._register_event_handler(self._normal_event_to_observer_map, event_name, internal_observer)
 
         return internal_observer
 
     def on_broadcast(self, event_name, callback, simple_handling = True, options = None,
-                     delay_per_message = 0):
+                     delay_per_message = 0, max_retries = None, immediate_retry_limit = None,
+                     max_retry_timeout = None):
         """ Listen to an distributed event with a callback function.
 
             :param str event_name:          the name of the event
@@ -77,6 +89,9 @@ class Observer(Core):
             :param bool simple_handling:    the flag to instruct the code to return the content of the message, instead of returning the whole :class:`vireo.model.Message` object.
             :param dict options:            the extra options to the method ``observe`` of the driver
             :param float delay_per_message: the delay per message (any negative numbers are regarded as zero, zero or any equivalent value is regarded as "no delay")
+            :param int max_retries:         maximum allowed retry count
+            :param int immediate_retry_limit: allowed immediate retry count
+            :param int max_retry_timeout:   maximum retry timeout
 
             The callback is a callable object, e.g., function, class method and lambda object,
             which takes only one parameter which is a JSON-decoded object.
@@ -98,9 +113,16 @@ class Observer(Core):
                 def error_handler(consumer, exception):
                     ...
         """
-        internal_observer = self._driver.observe(event_name, callback, False, True, options,
-                                                 simple_handling = simple_handling, controller_id = self.id,
-                                                 delay_per_message = delay_per_message)
+        extra_options = dict(
+            simple_handling       = simple_handling,
+            controller_id         = self.id,
+            delay_per_message     = delay_per_message,
+            max_retries           = max_retries,
+            immediate_retry_limit = immediate_retry_limit,
+            max_retry_timeout     = max_retry_timeout,
+        )
+
+        internal_observer = self._driver.observe(event_name, callback, False, True, options, **extra_options)
 
         self._register_event_handler(self._broadcast_event_to_observer_map, event_name, internal_observer)
 

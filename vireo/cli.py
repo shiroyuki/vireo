@@ -29,6 +29,14 @@ class EventEmitter(ICommand):
         )
 
         parser.add_argument(
+            '--repeat',
+            '-r',
+            required = False,
+            type = int,
+            default = 1,
+        )
+
+        parser.add_argument(
             'event_name',
             help = 'The name of the event (e.g., "sample.primary")'
         )
@@ -56,12 +64,13 @@ class EventEmitter(ICommand):
         driver  = Driver(args.bind_url)
         service = Core(driver)
 
-        service.emit(
-            args.event_name,
-            json.loads(args.event_data) if args.event_data else None,
-            options,
-            error_suppressed = False,
-        )
+        for i in range(args.repeat if args.repeat > 1 else 1):
+            service.emit(
+                args.event_name,
+                json.loads(args.event_data) if args.event_data else None,
+                options,
+                error_suppressed = False,
+            )
 
 
 class ObserverRemoteControl(ICommand):

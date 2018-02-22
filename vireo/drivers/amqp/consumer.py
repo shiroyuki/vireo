@@ -16,7 +16,8 @@ from .exception import NoConnectionError
 from .helper    import active_connection, fill_in_the_blank, SHARED_DIRECT_EXCHANGE_NAME, SHARED_TOPIC_EXCHANGE_NAME, SHARED_SIGNAL_CONNECTION_LOSS
 
 IMMEDIATE_RETRY_LIMIT = 10
-MAX_RETRY_COUNT = 60
+MAX_RETRY_COUNT = 20
+MAX_RETRY_DELAY = 30
 PING_MESSAGE    = 'ping'
 
 
@@ -70,7 +71,7 @@ class Consumer(threading.Thread):
                  simple_handling, unlimited_retries = False, on_connect = None, on_disconnect = None,
                  on_error = None, controller_id = None, exchange_options = None, auto_acknowledge = False,
                  send_sigterm_on_disconnect = True, delay_per_message = 0, max_retries = MAX_RETRY_COUNT,
-                 immediate_retry_limit = IMMEDIATE_RETRY_LIMIT):
+                 immediate_retry_limit = IMMEDIATE_RETRY_LIMIT, max_retry_delay = MAX_RETRY_DELAY):
         super().__init__(daemon = True)
 
         queue_options    = queue_options    if queue_options    and isinstance(queue_options,    dict) else {}
@@ -93,6 +94,7 @@ class Consumer(threading.Thread):
         self._controller_id   = controller_id
         self._consumer_id     = str(uuid.uuid4())
         self._max_retries     = max_retries
+        self._max_retry_delay = max_retry_delay
         self._immediate_retry_limit = immediate_retry_limit if immediate_retry_limit < max_retries else max_retries
 
         self._send_sigterm_on_disconnect = send_sigterm_on_disconnect
@@ -172,7 +174,7 @@ class Consumer(threading.Thread):
                 elif self._on_disconnect:
                     log('warning', '{}: {} the maximum retries (retry #{}/{})'.format(self._debug_route_name(), 'Reached' if self._retry_count == self._max_retries else 'Exceeded', self._retry_count, self._max_retries))
 
-                    self._async_execute(self._on_disconnect)
+                    self._async_invoke_callback(self._on_disconnect)
 
                     log('warning', '{}: Passed the error information occurred to the error handler'.format(self._debug_route_name()))
 
@@ -221,20 +223,35 @@ class Consumer(threading.Thread):
         if self._channel:
             self._channel.stop_consuming()
 
-    def _async_execute(self, callable_method, *args, **kwargs):
+    def _async_invoke_callback(self, callable_method, *args, **kwargs):
         params = [*args]
         params.append(self)
 
-        kw_params = dict(controller_id = self._controller_id, route = self.route, queue_name = self._queue_name, **kwargs)
+        kw_params = dict(
+            controller_id = self._controller_id,
+            route         = self.route,
+            queue_name    = self._queue_name,
+            **kwargs
+        )
 
-        async_callback = threading.Thread(target = callable_method, args = params, kwargs = kw_params, daemon = True)
+        async_callback = threading.Thread(
+            target = callable_method,
+            args   = params,
+            kwargs = kw_params,
+            daemon = True,
+        )
+
         async_callback.start()
 
     def _listen(self):
         with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
             self._channel = channel
 
-            self._queue_name = self._declare_topic_queue(channel) if self.distributed else self._declare_shared_queue(channel)
+            self._queue_name = (
+                self._declare_topic_queue(channel)
+                if self.distributed
+                else self._declare_shared_queue(channel)
+            )
 
             self._declare_recovery_queue(channel)
 
@@ -357,7 +374,13 @@ class Consumer(threading.Thread):
 
                     self.callback(message)
                 except Exception as unexpected_error:
-                    self._handle_error_during_consumption(message_id, raw_message, unexpected_error, traceback.format_exc())
+                    self._handle_error_during_consumption(
+                        message_id,
+                        raw_message,
+                        unexpected_error,
+                        traceback.format_exc(),
+                        'Error detected while processing the message',
+                    )
 
                     log('error', '{}: MESSAGE {}: Error detected while processing the message'.format(self._debug_route_name(), message_id))
 
@@ -372,7 +395,13 @@ class Consumer(threading.Thread):
                     if not self._auto_acknowledge:
                         channel.basic_ack(delivery_tag = method_frame.delivery_tag)
                 except Exception as unexpected_error:
-                    self._handle_error_during_consumption(message_id, raw_message, unexpected_error, traceback.format_exc())
+                    self._handle_error_during_consumption(
+                        message_id,
+                        raw_message,
+                        unexpected_error,
+                        traceback.format_exc(),
+                        'Error detected while acknowledging the delivery'
+                    )
 
                     log('error', '{}: MESSAGE {}: Error detected while acknowledging the message delivery ({})'.format(self._debug_route_name(), message_id, method_frame.delivery_tag))
 
@@ -406,14 +435,14 @@ class Consumer(threading.Thread):
                         self._retry_count = 0
 
                         if self._on_connect:
-                            self._async_execute(self._on_connect)
+                            self._async_invoke_callback(self._on_connect)
                 self._stopped = True
             except Exception as e: # ConnectionClosed
                 raise NoConnectionError('The connection has been absurbly disconnected.')
 
             log('debug', 'Stopped listening to {}'.format(self._debug_route_name()))
 
-    def _handle_error_during_consumption(self, message_id, raw_message, error, execution_trace):
+    def _handle_error_during_consumption(self, message_id, raw_message, error, execution_trace, summary):
         with active_connection(self.url, self._on_connect, self._on_disconnect, self._on_error) as channel:
             error_info = {
                 'type'      : type(error).__name__,
@@ -446,7 +475,7 @@ class Consumer(threading.Thread):
             channel.basic_publish(**republishing_options)
 
             if self._on_error:
-                self._async_execute(self._on_error, error)
+                self._async_invoke_callback(self._on_error, error, summary = summary)
 
             if isinstance(error, (ConnectionClosed, ChannelClosed)):
                 log('error', '{}: Connection Error: {type}: {message}\n{traceback}'.format(
