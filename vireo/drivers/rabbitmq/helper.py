@@ -16,7 +16,7 @@ SHARED_TOPIC_EXCHANGE_NAME    = 'vireo_default_topic_r0'
 re_remove_credential = re.compile('//[^:]+:[^@]+@')
 
 
-def get_blocking_queue_connection(url):
+def make_connection(url):
     init_params = URLParameters(url)
 
     return BlockingConnection(init_params)
@@ -27,7 +27,7 @@ def active_connection(url, on_connect, on_disconnect, summary = None):
     log('debug', '[active_connection] New active connection to {}'.format(re_remove_credential.sub('//', url)))
 
     try:
-        connection = get_blocking_queue_connection(url)
+        connection = make_connection(url)
         channel    = connection.channel()
 
         if on_connect:
